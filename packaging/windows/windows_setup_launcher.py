@@ -121,6 +121,18 @@ def find_ollama_exe() -> Path | None:
     return None
 
 
+def find_powershell_exe() -> str:
+    found = shutil.which("powershell.exe") or shutil.which("powershell")
+    if found:
+        return found
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        if candidate.exists():
+            return str(candidate)
+    return "powershell.exe"
+
+
 def run_checked(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     say("")
     say("[RUNNING] " + " ".join(cmd))
@@ -137,20 +149,15 @@ def run_quiet(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | 
 
 
 def install_winget(package_id: str) -> None:
-    winget = shutil.which("winget")
-    if not winget:
-        raise RuntimeError("winget을 찾지 못했습니다. Miniconda/Ollama를 수동 설치한 뒤 다시 실행하세요.")
-    run_checked(
-        [
-            winget,
-            "install",
-            "-e",
-            "--id",
-            package_id,
-            "--accept-package-agreements",
-            "--accept-source-agreements",
-        ]
+    script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { "
+        "throw 'winget was not found. Install from Microsoft App Installer, then run this setup again.' "
+        "}; "
+        f"winget install -e --id '{package_id}' "
+        "--accept-package-agreements --accept-source-agreements --disable-interactivity"
     )
+    run_checked([find_powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
 
 
 def ensure_conda() -> Path:

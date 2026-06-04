@@ -116,6 +116,18 @@ def find_ollama_exe() -> Path | None:
     return None
 
 
+def find_powershell_exe() -> str:
+    found = shutil.which("powershell.exe") or shutil.which("powershell")
+    if found:
+        return found
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        if candidate.exists():
+            return str(candidate)
+    return "powershell.exe"
+
+
 def run_quiet(cmd: list[str], *, cwd: Path | None = None) -> tuple[int, str]:
     proc = subprocess.run(
         cmd,
@@ -187,21 +199,15 @@ def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
 
 
 def install_winget(package_id: str, *, log=print) -> None:
-    winget = shutil.which("winget")
-    if not winget:
-        raise RuntimeError("winget was not found. Install Miniconda/Ollama manually, then run this manager again.")
-    run_live(
-        [
-            winget,
-            "install",
-            "-e",
-            "--id",
-            package_id,
-            "--accept-package-agreements",
-            "--accept-source-agreements",
-        ],
-        log=log,
+    script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { "
+        "throw 'winget was not found. Install from Microsoft App Installer, then run this manager again.' "
+        "}; "
+        f"winget install -e --id '{package_id}' "
+        "--accept-package-agreements --accept-source-agreements --disable-interactivity"
     )
+    run_live([find_powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], log=log)
 
 
 def ensure_conda(*, log=print) -> Path:
@@ -415,10 +421,13 @@ class ManagerApp:
 
     def _setup_style(self) -> None:
         style = self.ttk.Style()
-        try:
-            style.theme_use("clam")
-        except self.tk.TclError:
-            pass
+        for theme in ("vista", "xpnative", "winnative", "clam"):
+            try:
+                if theme in style.theme_names():
+                    style.theme_use(theme)
+                    break
+            except self.tk.TclError:
+                continue
         style.configure("TFrame", background="#f4f6f8")
         style.configure("Header.TFrame", background="#ffffff")
         style.configure("TLabel", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 10))
@@ -437,14 +446,21 @@ class ManagerApp:
         header = ttk.Frame(self.root, style="Header.TFrame", padding=(22, 18))
         header.pack(fill="x")
         logo_path = resource_path("Logo", "logo_aim4lab.png")
+        icon_path = resource_path("Icon", "aim4lab_app_icon.png")
+        self.app_icon_image = None
         self.logo_image = None
         self.logo_display = None
+        if icon_path.exists():
+            try:
+                self.app_icon_image = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(False, self.app_icon_image)
+            except tk.TclError:
+                pass
         if logo_path.exists():
             try:
                 self.logo_image = tk.PhotoImage(file=str(logo_path))
                 factor = max(1, self.logo_image.width() // 190)
                 self.logo_display = self.logo_image.subsample(factor, factor)
-                self.root.iconphoto(False, self.logo_image)
                 logo_label = tk.Label(header, image=self.logo_display, bg="#ffffff", borderwidth=0)
                 logo_label.pack(side="left", padx=(0, 22))
             except tk.TclError:

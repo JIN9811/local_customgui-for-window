@@ -183,6 +183,8 @@ packaging/windows/build/           PyInstaller 임시 빌드 폴더
 packaging/windows/specs/           PyInstaller spec 출력 폴더
 dist/                              최종 EXE 출력 폴더
 Logo/logo_aim4lab.png              Manager EXE에 포함되는 AIM4LAB 로고
+Icon/aim4lab_app_icon.ico          Windows EXE 파일 아이콘
+Icon/aim4lab_app_icon.png          Manager 창 아이콘
 ```
 
 설치와 실행을 자동으로 처리하는 Setup EXE:

@@ -34,12 +34,22 @@ if (-not (Test-Path ".\Logo\logo_aim4lab.png")) {
   throw "Could not find AIM4LAB logo: .\Logo\logo_aim4lab.png"
 }
 
+if (-not (Test-Path ".\Icon\aim4lab_app_icon.ico")) {
+  throw "Could not find AIM4LAB app icon: .\Icon\aim4lab_app_icon.ico"
+}
+
+if (-not (Test-Path ".\Icon\aim4lab_app_icon.png")) {
+  throw "Could not find AIM4LAB app icon PNG: .\Icon\aim4lab_app_icon.png"
+}
+
 $CondaExe = "$env:UserProfile\miniconda3\Scripts\conda.exe"
 if (-not (Test-Path $CondaExe)) {
   throw "Could not find conda.exe: $CondaExe"
 }
 
 $LogoData = "$ProjectRoot\Logo\logo_aim4lab.png;Logo"
+$IconData = "$ProjectRoot\Icon\aim4lab_app_icon.png;Icon"
+$IconPath = "$ProjectRoot\Icon\aim4lab_app_icon.ico"
 
 Stop-ExistingExe "LocalCustomGUI-Manager"
 Invoke-Checked $CondaExe @("run", "-n", "local_customgui_windows", "python", "-m", "pip", "install", "pyinstaller")
@@ -53,8 +63,10 @@ Invoke-Checked $CondaExe @(
   "--specpath", ".\packaging\windows\specs",
   "--distpath", ".\dist",
   "--name", "LocalCustomGUI-Manager",
+  "--icon", $IconPath,
   "--hidden-import", "tkinter.messagebox",
   "--add-data", $LogoData,
+  "--add-data", $IconData,
   ".\packaging\windows\windows_manager_launcher.py"
 )
 
