@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+from tkinter import messagebox as tk_messagebox
 
 
 ENV_NAME = "local_customgui_windows"
@@ -36,7 +37,7 @@ def bundle_dir() -> Path:
     frozen_bundle = getattr(sys, "_MEIPASS", None)
     if frozen_bundle:
         return Path(frozen_bundle)
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def resource_path(*parts: str) -> Path:
@@ -396,7 +397,7 @@ class ManagerApp:
 
         self.tk = tk
         self.ttk = ttk
-        self.messagebox = __import__("tkinter.messagebox", fromlist=["messagebox"])
+        self.messagebox = tk_messagebox
         self.root = tk.Tk()
         self.root.title("AIM4LAB LocalCustomGUI Manager")
         self.root.geometry("900x680")

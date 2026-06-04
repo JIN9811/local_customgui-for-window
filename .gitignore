@@ -31,3 +31,5 @@ models/*/latest
 build/
 dist/
 *.spec
+packaging/windows/build/
+packaging/windows/specs/
