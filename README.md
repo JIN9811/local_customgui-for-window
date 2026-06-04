@@ -178,6 +178,8 @@ LocalCustomGUI-Manager.exe
 
 Streamlit 서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 서버는 종료되지 않고 Windows 시스템 트레이로 숨겨진다. 트레이 아이콘 우클릭 메뉴에서 `Open GUI`, `Restart Server`, `Quit Server`, `Open Browser`를 사용할 수 있다.
 
+설치가 완료되면 Manager가 현재 사용자 기준 Windows `프로그램 추가/제거` 목록에 `AIM4LAB LocalCustomGUI`를 등록한다. Windows 설정에서 제거를 누르면 `LocalCustomGUI-Manager.exe --uninstall`이 실행되어 Manager의 Uninstall 탭으로 바로 이동한다.
+
 패키징 관련 파일 구조:
 
 ```text

@@ -22,6 +22,10 @@ PORT = "8791"
 TOTAL_INSTALL_STEPS = 9
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 GITHUB_URL = "https://github.com/JIN9811/local_customgui-for-window"
+APP_DISPLAY_NAME = "AIM4LAB LocalCustomGUI"
+APP_PUBLISHER = "AIM4LAB"
+APP_VERSION = "0.1.0"
+UNINSTALL_REGISTRY_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\AIM4LAB_LocalCustomGUI"
 
 
 def creation_flags() -> int:
@@ -43,6 +47,20 @@ def bundle_dir() -> Path:
 
 def resource_path(*parts: str) -> Path:
     return bundle_dir().joinpath(*parts)
+
+
+def quote_windows_arg(value: str) -> str:
+    return '"' + value.replace('"', r'\"') + '"'
+
+
+def manager_exe_for_registration(project_root: Path | None) -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve()
+    if project_root:
+        candidate = project_root / "LocalCustomGUI-Manager.exe"
+        if candidate.exists():
+            return candidate.resolve()
+    return Path(sys.executable).resolve()
 
 
 def find_project_root() -> Path | None:
@@ -396,6 +414,65 @@ def streamlit_config_target() -> Path | None:
     return target if target.exists() else None
 
 
+def windows_uninstall_entry_exists() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_REGISTRY_KEY):
+            return True
+    except OSError:
+        return False
+
+
+def register_windows_uninstaller(project_root: Path | None, *, log=print) -> None:
+    if os.name != "nt":
+        log("[SKIP] Windows Apps uninstall registration is only available on Windows.")
+        return
+    try:
+        import winreg
+
+        install_root = project_root or find_project_root() or exe_dir()
+        manager_exe = manager_exe_for_registration(project_root)
+        uninstall_command = f"{quote_windows_arg(str(manager_exe))} --uninstall"
+        estimated_size_kb = 0
+        if manager_exe.exists():
+            estimated_size_kb = max(1, int(manager_exe.stat().st_size / 1024))
+
+        key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, UNINSTALL_REGISTRY_KEY, 0, winreg.KEY_SET_VALUE)
+        with key:
+            winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_DISPLAY_NAME)
+            winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, APP_VERSION)
+            winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, APP_PUBLISHER)
+            winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, str(install_root))
+            winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, f"{str(manager_exe)},0")
+            winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, uninstall_command)
+            winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, GITHUB_URL)
+            winreg.SetValueEx(key, "NoModify", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "NoRepair", 0, winreg.REG_DWORD, 1)
+            if estimated_size_kb:
+                winreg.SetValueEx(key, "EstimatedSize", 0, winreg.REG_DWORD, estimated_size_kb)
+        log(f"[DONE] Registered Windows Apps uninstall entry: {APP_DISPLAY_NAME}")
+    except Exception as exc:
+        log(f"[WARN] Could not register Windows Apps uninstall entry: {exc}")
+
+
+def unregister_windows_uninstaller(*, log=print) -> None:
+    if os.name != "nt":
+        log("[SKIP] Windows Apps uninstall registration is only available on Windows.")
+        return
+    try:
+        import winreg
+
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, UNINSTALL_REGISTRY_KEY)
+        log(f"[DONE] Removed Windows Apps uninstall entry: {APP_DISPLAY_NAME}")
+    except FileNotFoundError:
+        log(f"[SKIP] Windows Apps uninstall entry is missing: {APP_DISPLAY_NAME}")
+    except OSError as exc:
+        log(f"[WARN] Could not remove Windows Apps uninstall entry: {exc}")
+
+
 class ManagerApp:
     def __init__(self) -> None:
         import tkinter as tk
@@ -562,6 +639,7 @@ class ManagerApp:
             "ollama_model": tk.BooleanVar(value=True),
             "runtime": tk.BooleanVar(value=True),
             "env_file": tk.BooleanVar(value=True),
+            "windows_uninstall_entry": tk.BooleanVar(value=True),
             "models": tk.BooleanVar(value=False),
             "streamlit_config": tk.BooleanVar(value=False),
         }
@@ -573,6 +651,7 @@ class ManagerApp:
             ("ollama_model", f"Ollama model: {OLLAMA_MODEL}"),
             ("runtime", "Runtime state, logs, and caches"),
             ("env_file", "Local app config: .env"),
+            ("windows_uninstall_entry", "Windows Apps uninstall entry"),
             ("models", "Model artifacts under models/classification and models/regression"),
             ("streamlit_config", "Streamlit user config in %USERPROFILE%\\.streamlit"),
         ):
@@ -597,7 +676,7 @@ class ManagerApp:
         )
         self.uninstall_button.pack(anchor="w", pady=(16, 0))
         note = (
-            "Recommended cleanup removes the conda env, Ollama model, runtime state/log/cache, and .env. "
+            "Recommended cleanup removes the conda env, Ollama model, runtime state/log/cache, .env, and Windows Apps entry. "
             "The project folder itself is never deleted automatically."
         )
         ttk.Label(self.uninstall_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
@@ -694,6 +773,7 @@ class ManagerApp:
 
         self.set_step(7, "Preparing Streamlit user config")
         ensure_streamlit_config(log=self.log)
+        register_windows_uninstaller(project_root, log=self.log)
 
         self.set_step(8, f"Preparing Ollama model: {OLLAMA_MODEL}")
         if download_model:
@@ -824,6 +904,7 @@ class ManagerApp:
             "ollama_model": ollama_model_exists(ollama_exe),
             "runtime": bool(runtime_targets(project_root)),
             "env_file": bool(env_targets(project_root)),
+            "windows_uninstall_entry": windows_uninstall_entry_exists(),
             "models": bool(model_targets(project_root)),
             "streamlit_config": streamlit_config_target() is not None,
         }
@@ -834,6 +915,7 @@ class ManagerApp:
             "ollama_model": f"Ollama model: {OLLAMA_MODEL}",
             "runtime": "Runtime state, logs, and caches",
             "env_file": "Local app config: .env",
+            "windows_uninstall_entry": "Windows Apps uninstall entry",
             "models": "Model artifacts under models/classification and models/regression",
             "streamlit_config": "Streamlit user config in %USERPROFILE%\\.streamlit",
         }
@@ -846,9 +928,17 @@ class ManagerApp:
             status = "available" if available else "missing"
             self.delete_text_vars[key].set(f"{labels[key]} [{status}]")  # type: ignore[index]
 
+    def open_uninstall_page(self) -> None:
+        self.notebook.select(self.uninstall_tab)
+        self.select_recommended_delete()
+        self.refresh_delete_options()
+        self.status_var.set("Uninstall ready")
+        self.root.after(250, self.delete_entry.focus_set)
+        self.log("[INFO] Opened Uninstall page from Windows Apps uninstall action.")
+
     def select_recommended_delete(self) -> None:
         for key, var in self.delete_vars.items():
-            var.set(key in {"conda_env", "ollama_model", "runtime", "env_file"})  # type: ignore[attr-defined]
+            var.set(key in {"conda_env", "ollama_model", "runtime", "env_file", "windows_uninstall_entry"})  # type: ignore[attr-defined]
 
     def select_all_delete(self) -> None:
         for var in self.delete_vars.values():
@@ -872,6 +962,8 @@ class ManagerApp:
             lines.extend(str(path) for path in runtime_targets(project_root))
         if "env_file" in keys:
             lines.extend(str(path) for path in env_targets(project_root))
+        if "windows_uninstall_entry" in keys:
+            lines.append("HKCU\\" + UNINSTALL_REGISTRY_KEY)
         if "models" in keys:
             lines.extend(str(path) for path in model_targets(project_root))
         if "streamlit_config" in keys:
@@ -938,6 +1030,8 @@ class ManagerApp:
                 remove_path(target, target.parent, log=self.log)
             else:
                 self.log("[SKIP] Streamlit user config is missing.")
+        if "windows_uninstall_entry" in keys:
+            unregister_windows_uninstaller(log=self.log)
         self.queue.put(("clear_delete_confirm", None))
         self.queue.put(("refresh_delete", None))
         self.log("[DONE] Uninstall completed.")
@@ -1075,10 +1169,21 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="AIM4LAB LocalCustomGUI Windows manager.")
     parser.add_argument("--self-test", action="store_true", help="Check paths and exit.")
+    parser.add_argument("--uninstall", action="store_true", help="Open the Uninstall tab.")
+    parser.add_argument("--register-uninstall", action="store_true", help="Register Windows Apps uninstall entry and exit.")
+    parser.add_argument("--unregister-uninstall", action="store_true", help="Remove Windows Apps uninstall entry and exit.")
     args = parser.parse_args()
     if args.self_test:
         return self_test()
+    if args.register_uninstall:
+        register_windows_uninstaller(find_project_root(), log=print)
+        return 0
+    if args.unregister_uninstall:
+        unregister_windows_uninstaller(log=print)
+        return 0
     app = ManagerApp()
+    if args.uninstall:
+        app.root.after(350, app.open_uninstall_page)
     return app.run()
 
 
