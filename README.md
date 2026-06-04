@@ -81,7 +81,7 @@ if (-not $CondaExe) {
 
 & $CondaExe run -n $EnvName python --version | Out-Null
 if ($LASTEXITCODE -ne 0) {
-  Invoke-Checked $CondaExe create -y -n $EnvName python=3.11 pip
+  Invoke-Checked $CondaExe create -y -n $EnvName --override-channels -c conda-forge python=3.11 pip
 }
 
 Invoke-Checked $CondaExe run -n $EnvName python -m pip install -U pip
