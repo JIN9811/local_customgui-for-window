@@ -499,7 +499,9 @@ def render_css() -> None:
           --hd-ui-table-head: rgba(15, 23, 42, .045);
           --hd-ui-code-bg: rgba(15, 23, 42, .045);
           --hd-ui-code-text: #111827;
+          --hd-ui-link: #0369a1;
           --hd-upload-text: #334155;
+          --hd-upload-drop-bg: rgba(15, 23, 42, .025);
           --hd-info-bg: rgba(14, 116, 144, .08);
           --hd-info-border: rgba(14, 116, 144, .22);
           --hd-reasoning-text: #64748b;
@@ -510,7 +512,9 @@ def render_css() -> None:
           --hd-icon-color: #1e293b;
         }
         [data-theme="dark"],
-        [data-baseweb-theme="dark"] {
+        [data-baseweb-theme="dark"],
+        html[data-hd-streamlit-theme="dark"] {
+          color-scheme: dark;
           --hd-ui-text: #f8fafc;
           --hd-ui-muted: #e2e8f0;
           --hd-ui-subtle: #cbd5e1;
@@ -520,7 +524,9 @@ def render_css() -> None:
           --hd-ui-table-head: rgba(226, 232, 240, .08);
           --hd-ui-code-bg: rgba(226, 232, 240, .08);
           --hd-ui-code-text: #ffffff;
+          --hd-ui-link: #7dd3fc;
           --hd-upload-text: #f8fafc;
+          --hd-upload-drop-bg: rgba(15, 23, 42, .82);
           --hd-info-bg: rgba(56, 189, 248, .10);
           --hd-info-border: rgba(56, 189, 248, .28);
           --hd-reasoning-text: #dbeafe;
@@ -530,8 +536,80 @@ def render_css() -> None:
           --hd-avatar-bg: #0f2a44;
           --hd-icon-color: #f8fafc;
         }
-        .stApp, [data-testid="stAppViewContainer"] { color: var(--hd-ui-text); }
+        html[data-hd-streamlit-theme="light"] {
+          color-scheme: light;
+          --hd-ui-text: #0f172a;
+          --hd-ui-muted: #475569;
+          --hd-ui-subtle: #64748b;
+          --hd-ui-panel: #ffffff;
+          --hd-ui-panel-soft: #f8fafc;
+          --hd-ui-border: rgba(15, 23, 42, .14);
+          --hd-ui-table-head: rgba(15, 23, 42, .045);
+          --hd-ui-code-bg: rgba(15, 23, 42, .045);
+          --hd-ui-code-text: #111827;
+          --hd-ui-link: #0369a1;
+          --hd-upload-text: #334155;
+          --hd-upload-drop-bg: rgba(15, 23, 42, .025);
+          --hd-info-bg: rgba(14, 116, 144, .08);
+          --hd-info-border: rgba(14, 116, 144, .22);
+          --hd-reasoning-text: #64748b;
+          --hd-reasoning-bg: rgba(15, 23, 42, .035);
+          --hd-reasoning-border: rgba(100, 116, 139, .24);
+          --hd-reasoning-spinner: rgba(100, 116, 139, .48);
+          --hd-avatar-bg: #e8eef8;
+          --hd-icon-color: #1e293b;
+        }
+        .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] { color: var(--hd-ui-text); }
         .block-container { max-width: 1320px; padding-top: 2.8rem; padding-bottom: 4rem; }
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] span,
+        [data-testid="stMarkdownContainer"] strong,
+        [data-testid="stMarkdownContainer"] h1,
+        [data-testid="stMarkdownContainer"] h2,
+        [data-testid="stMarkdownContainer"] h3,
+        [data-testid="stMarkdownContainer"] h4,
+        [data-testid="stMarkdownContainer"] h5,
+        [data-testid="stMarkdownContainer"] h6,
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] * { color: var(--hd-ui-text); }
+        [data-testid="stMarkdownContainer"] a { color: var(--hd-ui-link); }
+        label, [data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * { color: var(--hd-ui-text) !important; }
+        [data-testid="stExpander"] {
+          color: var(--hd-ui-text);
+          border-color: var(--hd-ui-border) !important;
+          background: var(--hd-ui-panel);
+        }
+        [data-testid="stExpander"] details,
+        [data-testid="stExpander"] summary,
+        [data-testid="stExpander"] summary *,
+        [data-testid="stExpander"] [data-testid="stMarkdownContainer"] { color: var(--hd-ui-text) !important; }
+        [data-testid="stVerticalBlockBorderWrapper"],
+        [data-testid="stForm"],
+        [data-testid="stAlert"] {
+          color: var(--hd-ui-text);
+          border-color: var(--hd-ui-border) !important;
+          background-color: var(--hd-ui-panel) !important;
+        }
+        div[data-baseweb="input"],
+        div[data-baseweb="textarea"],
+        div[data-baseweb="select"],
+        div[data-baseweb="base-input"] {
+          color: var(--hd-ui-text) !important;
+          background: var(--hd-ui-panel-soft) !important;
+          border-color: var(--hd-ui-border) !important;
+        }
+        div[data-baseweb="input"] input,
+        div[data-baseweb="textarea"] textarea,
+        div[data-baseweb="select"] *,
+        input,
+        textarea {
+          color: var(--hd-ui-text) !important;
+          caret-color: var(--hd-ui-text) !important;
+        }
+        input::placeholder,
+        textarea::placeholder { color: var(--hd-ui-muted) !important; opacity: .92; }
         .app-hero { margin: .65rem 0 1.1rem; padding: 1.1rem 1.25rem 1.25rem; border-radius: 24px; background: linear-gradient(135deg, #071c35 0%, #0b2c55 58%, #123965 100%); color: #fff; box-shadow: 0 22px 60px rgba(7,28,53,.18); }
         .app-hero-logo-row { display: flex; align-items: center; margin-bottom: .9rem; min-height: 42px; }
         .app-hero-logo { max-height: 42px; width: auto; object-fit: contain; display: block; }
@@ -561,6 +639,23 @@ def render_css() -> None:
         div[data-testid="stFileUploader"] div { color: var(--hd-upload-text) !important; }
         .training-upload-box [data-testid="stFileUploader"] label p,
         div[data-testid="stFileUploader"] label p { font-size: 1.04rem; font-weight: 820; }
+        .training-upload-box [data-testid="stFileUploaderDropzone"],
+        [data-testid="stFileUploaderDropzone"] {
+          background: var(--hd-upload-drop-bg) !important;
+          border-color: var(--hd-ui-border) !important;
+        }
+        .training-upload-box [data-testid="stFileUploaderDropzoneInstructions"],
+        .training-upload-box [data-testid="stFileUploaderDropzoneInstructions"] *,
+        [data-testid="stFileUploaderDropzoneInstructions"],
+        [data-testid="stFileUploaderDropzoneInstructions"] * {
+          color: var(--hd-ui-muted) !important;
+        }
+        .training-upload-box [data-testid="stFileUploader"] button,
+        div[data-testid="stFileUploader"] button {
+          color: var(--hd-ui-text) !important;
+          background: var(--hd-ui-panel-soft) !important;
+          border-color: var(--hd-ui-border) !important;
+        }
         .active-dataset-banner { margin: .15rem 0 .75rem; padding: .72rem .85rem; border-radius: 14px; background: var(--hd-info-bg); border: 1px solid var(--hd-info-border); color: var(--hd-ui-text); font-size: 1.01rem; font-weight: 680; }
         @media (max-width: 720px) {
           .app-hero { padding: .95rem 1rem 1.05rem; border-radius: 18px; }
@@ -583,18 +678,33 @@ def render_css() -> None:
         .report-model-id-label { display: block; font-weight: 400; }
         .report-model-id-value { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; font-weight: 400; word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
         [data-testid="stDataFrame"],
-        [data-testid="stTable"] { color: var(--hd-ui-text) !important; border-color: var(--hd-ui-border) !important; }
+        [data-testid="stTable"] {
+          color: var(--hd-ui-text) !important;
+          border-color: var(--hd-ui-border) !important;
+          background: var(--hd-ui-panel) !important;
+        }
         [data-testid="stDataFrame"] div,
         [data-testid="stDataFrame"] span,
+        [data-testid="stDataFrame"] [role="grid"],
+        [data-testid="stDataFrame"] [role="row"],
+        [data-testid="stDataFrame"] [role="columnheader"],
+        [data-testid="stDataFrame"] [role="gridcell"],
         [data-testid="stTable"] * { color: var(--hd-ui-text) !important; }
         [data-testid="stTable"] table { background: var(--hd-ui-panel) !important; }
         [data-testid="stTable"] th { background: var(--hd-ui-table-head) !important; color: var(--hd-ui-text) !important; border-color: var(--hd-ui-border) !important; }
-        [data-testid="stTable"] td { border-color: var(--hd-ui-border) !important; color: var(--hd-ui-text) !important; }
+        [data-testid="stTable"] td { background: var(--hd-ui-panel) !important; border-color: var(--hd-ui-border) !important; color: var(--hd-ui-text) !important; }
+        [data-testid="stDataFrame"] button,
+        [data-testid="stDataFrame"] input {
+          color: var(--hd-ui-text) !important;
+          background: var(--hd-ui-panel-soft) !important;
+          border-color: var(--hd-ui-border) !important;
+        }
         [data-testid="stMetric"],
         [data-testid="stMetric"] * { color: var(--hd-ui-text) !important; }
         [data-testid="stJson"] pre,
+        [data-testid="stJson"] span,
         pre,
-        code { color: var(--hd-ui-code-text); background-color: var(--hd-ui-code-bg); }
+        code { color: var(--hd-ui-code-text) !important; background-color: var(--hd-ui-code-bg); }
         [data-testid="stChatMessageAvatar"] { background: var(--hd-avatar-bg) !important; border: 1px solid var(--hd-ui-border) !important; color: var(--hd-icon-color) !important; }
         [data-testid="stChatMessageAvatar"] svg,
         [data-testid="stIconMaterial"],
@@ -603,6 +713,31 @@ def render_css() -> None:
         </style>
         """,
         unsafe_allow_html=True,
+    )
+    components.html(
+        """
+        <script>
+        const syncTheme = () => {
+          const doc = window.parent.document;
+          const root = doc.documentElement;
+          const app = doc.querySelector('[data-testid="stApp"]') || doc.body;
+          const bg = window.parent.getComputedStyle(app).backgroundColor || "";
+          const match = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+          if (!match) return;
+          const r = Number(match[1]);
+          const g = Number(match[2]);
+          const b = Number(match[3]);
+          const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+          root.setAttribute("data-hd-streamlit-theme", luminance < 0.45 ? "dark" : "light");
+        };
+        syncTheme();
+        const doc = window.parent.document;
+        const observer = new MutationObserver(syncTheme);
+        observer.observe(doc.body, { attributes: true, childList: true, subtree: true });
+        window.setInterval(syncTheme, 1200);
+        </script>
+        """,
+        height=0,
     )
 
 
