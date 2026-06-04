@@ -4,6 +4,10 @@
 
 ![Streamlit start screen](docs/assets/screenshots/streamlit-home.png)
 
+<video src="tutorial_video.mp4" controls width="100%"></video>
+
+[튜토리얼 영상 파일 열기](tutorial_video.mp4)
+
 ## 무엇을 할 수 있나
 
 - 학습용 Excel 데이터를 업로드하고 데이터 구조를 확인합니다.

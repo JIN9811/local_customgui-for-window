@@ -536,11 +536,11 @@ def render_css() -> None:
         .app-hero-logo-row { display: flex; align-items: center; margin-bottom: .9rem; min-height: 42px; }
         .app-hero-logo { max-height: 42px; width: auto; object-fit: contain; display: block; }
         .app-title-row { display: flex; align-items: center; gap: .85rem; flex-wrap: wrap; }
-        .app-title-row h1 { margin: 0; color: #fff; font-size: clamp(2rem, 3.7vw, 3.25rem); line-height: 1.03; letter-spacing: -.045em; font-weight: 820; }
+        .app-title-row h1 { margin: 0; color: #fff; font-size: clamp(1.75rem, 2.75vw, 2.7rem); line-height: 1.08; letter-spacing: 0; font-weight: 820; word-break: keep-all; overflow-wrap: normal; text-wrap: balance; }
         .app-byline { display: inline-flex; align-items: center; gap: .5rem; transform: translateY(.12rem); }
-        .app-byline span { color: rgba(255,255,255,.72); font-size: clamp(1rem, 1.85vw, 1.55rem); line-height: 1; font-weight: 650; letter-spacing: -.02em; }
+        .app-byline span { color: rgba(255,255,255,.72); font-size: clamp(1rem, 1.85vw, 1.55rem); line-height: 1; font-weight: 650; letter-spacing: 0; }
         .app-aim-logo { height: clamp(1.25rem, 2.05vw, 1.8rem); width: auto; object-fit: contain; display: block; background: rgba(255,255,255,.92); border-radius: 9px; padding: .16rem .32rem; }
-        .app-aim-lab { color: #fff; font-size: clamp(1rem, 1.85vw, 1.55rem); line-height: 1; font-weight: 850; letter-spacing: -.03em; margin-left: -.25rem; }
+        .app-aim-lab { color: #fff; font-size: clamp(1rem, 1.85vw, 1.55rem); line-height: 1; font-weight: 850; letter-spacing: 0; margin-left: -.25rem; }
         .app-hero-caption { margin: .75rem 0 0; color: rgba(255,255,255,.74); font-size: .96rem; }
         .chat-clear-anchor + div button { min-height: 3.25rem; }
         .chat-clear-anchor + div button p { white-space: nowrap; }
