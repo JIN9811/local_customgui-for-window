@@ -4,12 +4,36 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from pathlib import Path
 
 
 ENV_NAME = "local_customgui_windows"
 PORT = "8791"
+
+
+def say(message: str = "") -> None:
+    print(message, flush=True)
+
+
+def banner(title: str) -> None:
+    line = "=" * 72
+    say(line)
+    say(title)
+    say(line)
+
+
+def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2):
+                return True
+        except (OSError, urllib.error.URLError):
+            time.sleep(1)
+    return False
 
 
 def exe_dir() -> Path:
@@ -64,11 +88,12 @@ def find_conda_exe() -> Path:
 
 
 def main() -> int:
+    banner("LocalCustomGUI Windows Launcher")
     try:
         project_root = find_project_root()
         conda_exe = find_conda_exe()
     except Exception as exc:
-        print(f"[ERROR] {exc}")
+        say(f"[ERROR] {exc}")
         input("Enter를 누르면 종료합니다...")
         return 1
 
@@ -100,13 +125,23 @@ def main() -> int:
         "false",
     ]
 
-    print(f"Project: {project_root}")
-    print(f"Conda: {conda_exe}")
-    print(f"Starting Streamlit: {url}")
+    say(f"[INFO] Project: {project_root}")
+    say(f"[INFO] Conda: {conda_exe}")
+    say(f"[RUNNING] Streamlit 서버를 시작합니다: {url}")
     proc = subprocess.Popen(cmd, cwd=str(project_root), env=env)
-    time.sleep(4)
+    if wait_for_server(url):
+        say(f"[DONE] 서버 실행중: {url}")
+    else:
+        say(f"[WAIT] 서버 시작 확인이 늦어지고 있습니다. 잠시 뒤 브라우저에서 {url}을 확인하세요.")
     webbrowser.open(url)
-    return proc.wait()
+    say("[INFO] 이 창을 닫으면 서버가 종료될 수 있습니다. 종료하려면 Ctrl+C를 누르세요.")
+    try:
+        return proc.wait()
+    except KeyboardInterrupt:
+        say("")
+        say("[STOPPING] 서버를 종료합니다...")
+        proc.terminate()
+        return 0
 
 
 if __name__ == "__main__":

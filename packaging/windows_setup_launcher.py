@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -13,6 +15,38 @@ from pathlib import Path
 ENV_NAME = "local_customgui_windows"
 OLLAMA_MODEL = "gemma4:e2b"
 PORT = "8791"
+TOTAL_STEPS = 9
+
+
+def say(message: str = "") -> None:
+    print(message, flush=True)
+
+
+def banner(title: str) -> None:
+    line = "=" * 72
+    say(line)
+    say(title)
+    say(line)
+
+
+def step(index: int, message: str) -> None:
+    say("")
+    say(f"[{index}/{TOTAL_STEPS}] {message}")
+
+
+def done(message: str = "완료") -> None:
+    say(f"[DONE] {message}")
+
+
+def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2):
+                return True
+        except (OSError, urllib.error.URLError):
+            time.sleep(1)
+    return False
 
 
 def exe_dir() -> Path:
@@ -88,12 +122,13 @@ def find_ollama_exe() -> Path | None:
 
 
 def run_checked(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
-    print("")
-    print("> " + " ".join(cmd))
+    say("")
+    say("[RUNNING] " + " ".join(cmd))
     proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, env=env)
     return_code = proc.wait()
     if return_code != 0:
         raise RuntimeError(f"명령 실행 실패(returncode={return_code}): {' '.join(cmd)}")
+    say("[DONE] command completed")
 
 
 def run_quiet(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> int:
@@ -121,8 +156,9 @@ def install_winget(package_id: str) -> None:
 def ensure_conda() -> Path:
     conda_exe = find_conda_exe()
     if conda_exe:
+        say(f"[OK] Miniconda found: {conda_exe}")
         return conda_exe
-    print("Miniconda가 없어 winget으로 설치를 시도합니다.")
+    say("[RUNNING] Miniconda가 없어 winget으로 설치를 시도합니다.")
     install_winget("Anaconda.Miniconda3")
     for _ in range(20):
         conda_exe = find_conda_exe()
@@ -135,25 +171,26 @@ def ensure_conda() -> Path:
 def ensure_ollama() -> Path | None:
     ollama_exe = find_ollama_exe()
     if ollama_exe:
+        say(f"[OK] Ollama found: {ollama_exe}")
         return ollama_exe
-    print("Ollama가 없어 winget으로 설치를 시도합니다.")
+    say("[RUNNING] Ollama가 없어 winget으로 설치를 시도합니다.")
     try:
         install_winget("Ollama.Ollama")
     except Exception as exc:
-        print(f"[WARN] Ollama 자동 설치 실패: {exc}")
+        say(f"[WARN] Ollama 자동 설치 실패: {exc}")
         return None
     for _ in range(20):
         ollama_exe = find_ollama_exe()
         if ollama_exe:
             return ollama_exe
         time.sleep(3)
-    print("[WARN] Ollama 설치 후 실행 파일을 찾지 못했습니다. LLM 기능은 Ollama 설치 후 사용할 수 있습니다.")
+    say("[WARN] Ollama 설치 후 실행 파일을 찾지 못했습니다. LLM 기능은 Ollama 설치 후 사용할 수 있습니다.")
     return None
 
 
 def ensure_conda_env(conda_exe: Path) -> None:
     if run_quiet([str(conda_exe), "run", "-n", ENV_NAME, "python", "--version"]) == 0:
-        print(f"Conda env exists: {ENV_NAME}")
+        say(f"[OK] Conda env exists: {ENV_NAME}")
         return
     run_checked([str(conda_exe), "create", "-y", "-n", ENV_NAME, "--override-channels", "-c", "conda-forge", "python=3.11", "pip"])
 
@@ -191,9 +228,10 @@ def ensure_streamlit_config() -> None:
 
 def ensure_ollama_model(ollama_exe: Path | None) -> None:
     if not ollama_exe:
-        print("[WARN] Ollama 실행 파일이 없어 모델 다운로드를 건너뜁니다.")
+        say("[WARN] Ollama 실행 파일이 없어 모델 다운로드를 건너뜁니다.")
         return
     if run_quiet([str(ollama_exe), "list"]) != 0:
+        say("[RUNNING] Ollama 서버를 시작합니다.")
         subprocess.Popen([str(ollama_exe), "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(5)
     run_checked([str(ollama_exe), "pull", OLLAMA_MODEL])
@@ -226,15 +264,26 @@ def launch_streamlit(conda_exe: Path, project_root: Path) -> int:
         "--browser.gatherUsageStats",
         "false",
     ]
-    print("")
-    print(f"설치 완료. Streamlit을 실행합니다: {url}")
+    say("")
+    say(f"[RUNNING] 설치 완료. Streamlit 서버를 실행합니다: {url}")
     proc = subprocess.Popen(cmd, cwd=str(project_root), env=env)
-    time.sleep(4)
+    if wait_for_server(url):
+        say(f"[DONE] 서버 실행중: {url}")
+    else:
+        say(f"[WAIT] 서버 시작 확인이 늦어지고 있습니다. 잠시 뒤 브라우저에서 {url}을 확인하세요.")
     webbrowser.open(url)
-    return int(proc.wait())
+    say("[INFO] 이 창을 닫으면 서버가 종료될 수 있습니다. 종료하려면 Ctrl+C를 누르세요.")
+    try:
+        return int(proc.wait())
+    except KeyboardInterrupt:
+        say("")
+        say("[STOPPING] 서버를 종료합니다...")
+        proc.terminate()
+        return 0
 
 
 def main() -> int:
+    banner("LocalCustomGUI Windows Setup")
     parser = argparse.ArgumentParser(description="Install and launch LocalCustomGUI on Windows.")
     parser.add_argument("--dry-run", action="store_true", help="Print detected paths without installing.")
     parser.add_argument("--no-launch", action="store_true", help="Install only; do not launch Streamlit.")
@@ -242,30 +291,51 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        step(1, "프로젝트/설치 경로 확인")
         project_root = find_project_root()
-        print(f"Project: {project_root}")
+        say(f"[INFO] Project: {project_root}")
         conda_exe = find_conda_exe()
         ollama_exe = find_ollama_exe()
-        print(f"Conda: {conda_exe or 'not found'}")
-        print(f"Ollama: {ollama_exe or 'not found'}")
+        say(f"[INFO] Conda: {conda_exe or 'not found'}")
+        say(f"[INFO] Ollama: {ollama_exe or 'not found'}")
+        done("경로 확인 완료")
         if args.dry_run:
             return 0
 
+        step(2, "Miniconda 확인/설치")
         conda_exe = ensure_conda()
+        done("Miniconda 준비 완료")
+        step(3, "Ollama 확인/설치")
         ollama_exe = ensure_ollama()
+        done("Ollama 확인 완료")
+        step(4, f"Conda 환경 준비: {ENV_NAME}")
         ensure_conda_env(conda_exe)
+        done("Conda 환경 준비 완료")
+        step(5, "Python 패키지와 PyCaret 설치")
         install_python_deps(conda_exe, project_root)
+        done("Python 패키지 설치 완료")
+        step(6, ".env 파일 준비")
         ensure_env_file(project_root)
+        done(".env 준비 완료")
+        step(7, "Streamlit 첫 실행 설정 준비")
         ensure_streamlit_config()
+        done("Streamlit 설정 준비 완료")
         if not args.skip_model:
+            step(8, f"Ollama 모델 다운로드/확인: {OLLAMA_MODEL}")
             ensure_ollama_model(ollama_exe)
+            done("Ollama 모델 준비 완료")
+        else:
+            step(8, "Ollama 모델 다운로드 건너뜀")
+            done("--skip-model")
         if args.no_launch:
-            print("설치 완료. --no-launch 옵션으로 앱 실행은 건너뜁니다.")
+            say("")
+            say("[DONE] 설치 완료. --no-launch 옵션으로 앱 실행은 건너뜁니다.")
             return 0
+        step(9, "Streamlit 실행")
         return launch_streamlit(conda_exe, project_root)
     except Exception as exc:
-        print("")
-        print(f"[ERROR] {exc}")
+        say("")
+        say(f"[ERROR] {exc}")
         input("Enter를 누르면 종료합니다...")
         return 1
 
