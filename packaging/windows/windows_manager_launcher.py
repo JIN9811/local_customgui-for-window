@@ -21,6 +21,7 @@ OLLAMA_MODEL = "gemma4:e2b"
 PORT = "8791"
 TOTAL_INSTALL_STEPS = 9
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+GITHUB_URL = "https://github.com/JIN9811/local_customgui-for-window"
 
 
 def creation_flags() -> int:
@@ -477,7 +478,10 @@ class ManagerApp:
             style="HeaderSub.TLabel",
         ).pack(anchor="w", pady=(4, 0))
         self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(header, textvariable=self.status_var, style="HeaderSub.TLabel").pack(side="right", anchor="n")
+        header_actions = ttk.Frame(header, style="Header.TFrame")
+        header_actions.pack(side="right", anchor="n")
+        ttk.Label(header_actions, textvariable=self.status_var, style="HeaderSub.TLabel").pack(anchor="e")
+        ttk.Button(header_actions, text="GitHub", command=lambda: webbrowser.open(GITHUB_URL)).pack(anchor="e", pady=(8, 0))
 
         body = ttk.Frame(self.root, padding=(18, 16))
         body.pack(fill="both", expand=True)
