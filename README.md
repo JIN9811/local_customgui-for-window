@@ -113,7 +113,7 @@ if ($OllamaExe) {
   Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM을 쓰려면 Ollama 설치와 모델 다운로드가 필요합니다."
 }
 
-$StreamlitConfigDir = Join-Path $env:UserProfile ".streamlit"
+$StreamlitConfigDir = ".\.streamlit"
 New-Item -ItemType Directory -Force -Path $StreamlitConfigDir | Out-Null
 @"
 [server]
@@ -122,15 +122,28 @@ showEmailPrompt = false
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#2f6f9f"
+backgroundColor = "#0b1220"
+secondaryBackgroundColor = "#111827"
+textColor = "#e5e7eb"
+
+[theme.sidebar]
+backgroundColor = "#0f172a"
+secondaryBackgroundColor = "#111827"
+textColor = "#e5e7eb"
 "@ | Set-Content -LiteralPath (Join-Path $StreamlitConfigDir "config.toml") -Encoding UTF8
 
 $env:STREAMLIT_SERVER_HEADLESS = "true"
 $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
+$env:STREAMLIT_THEME_BASE = "dark"
 
 Write-Host ""
 Write-Host "설치 완료. Streamlit을 실행합니다: http://127.0.0.1:8791"
-Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
+Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false --theme.base dark
 ```
 
 다음부터는 설치 과정을 반복하지 않고 아래만 실행하면 된다.
@@ -139,7 +152,8 @@ Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.p
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
 $env:STREAMLIT_SERVER_HEADLESS = "true"
 $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
-conda run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
+$env:STREAMLIT_THEME_BASE = "dark"
+conda run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false --theme.base dark
 ```
 
 접속 주소:
