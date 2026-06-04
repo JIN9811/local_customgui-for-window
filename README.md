@@ -4,7 +4,7 @@
 
 핵심 원칙:
 
-- ML 예측은 저장된 scikit-learn/joblib model artifact가 수행한다.
+- ML 예측은 저장된 model artifact가 수행한다.
 - LLM은 tool 호출과 결과 설명만 담당한다.
 - Excel 전체 row를 LLM prompt에 넣지 않는다.
 - schema 검증 없이 prediction하지 않는다.
@@ -27,7 +27,7 @@
 
 ## Windows PowerShell 빠른 설치
 
-아래 블록은 **README.md와 `streamlit_app.py`가 있는 프로젝트 폴더에서 PowerShell을 열고 그대로 붙여넣어 실행**한다. 기본 배포 설치는 별도 conda/PyCaret 없이 Windows에서 잘 설치되는 `sklearn` 학습 엔진을 사용한다.
+아래 블록은 **README.md와 `streamlit_app.py`가 있는 프로젝트 폴더에서 PowerShell을 열고 그대로 붙여넣어 실행**한다. 기본 배포 설치는 별도 conda 없이 일반 Windows PC에서 바로 실행되는 구성을 사용한다.
 
 ```powershell
 $ErrorActionPreference = "Stop"
@@ -79,9 +79,7 @@ if (-not (Test-Path ".\.env")) {
   Copy-Item ".\.env.example" ".\.env"
 }
 
-$env:HD_SERVING_TRAIN_ENGINE = "sklearn"
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
-[Environment]::SetEnvironmentVariable("HD_SERVING_TRAIN_ENGINE", "sklearn", "User")
 
 Write-Host ""
 Write-Host "설치 완료. Streamlit을 실행합니다: http://127.0.0.1:8791"
@@ -91,7 +89,6 @@ Write-Host "설치 완료. Streamlit을 실행합니다: http://127.0.0.1:8791"
 다음부터는 설치 과정을 반복하지 않고 아래만 실행하면 된다.
 
 ```powershell
-$env:HD_SERVING_TRAIN_ENGINE = "sklearn"
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
 .\.venv\Scripts\python.exe -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791
 ```
@@ -122,7 +119,6 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 python -m pip install -e .
 cp .env.example .env
-export HD_SERVING_TRAIN_ENGINE=sklearn
 ```
 
 ## Ollama / vLLM 설정
@@ -193,7 +189,6 @@ Regression:
 PowerShell:
 
 ```powershell
-$env:HD_SERVING_TRAIN_ENGINE = "sklearn"
 .\.venv\Scripts\python.exe -m hd_serving.train_classification --input data\raw\class_extracted.xlsx
 .\.venv\Scripts\python.exe -m hd_serving.train_regression --input data\raw\Reg_extracted.xlsx
 .\.venv\Scripts\python.exe -m hd_serving.inference --task classification --model latest --input data\raw\class_extracted.xlsx --output predictions_classification.xlsx
@@ -204,7 +199,6 @@ Linux/macOS:
 
 ```bash
 source .venv/bin/activate
-export HD_SERVING_TRAIN_ENGINE=sklearn
 python -m hd_serving.train_classification --input data/raw/class_extracted.xlsx
 python -m hd_serving.train_regression --input data/raw/Reg_extracted.xlsx
 python -m hd_serving.inference --task classification --model latest --input data/raw/class_extracted.xlsx --output predictions_classification.xlsx
