@@ -1,399 +1,171 @@
-# 형상/시험 변수 기반 고압차단기 성능 예측
+# AIM4LAB LocalCustomGUI
 
-이 프로그램은 `serving/HD_LLM.ipynb`의 수치형 classification/regression 로직을 재현 가능한 Python package와 Streamlit GUI로 분리한 로컬 데이터 분석 앱이다.
+고압차단기 형상/시험 변수 기반 성능 예측을 로컬 PC에서 실행하는 Windows용 GUI 프로그램입니다. Excel 데이터를 올리고, 모델 학습/예측/성능 비교/결과 정리를 한 화면에서 진행할 수 있습니다. LLM은 예측값을 직접 만들지 않고, 저장된 모델과 실행 결과를 바탕으로 사용자가 이해하기 쉽게 설명합니다.
 
-핵심 원칙:
+![Streamlit start screen](docs/assets/screenshots/streamlit-home.png)
 
-- ML 예측은 저장된 model artifact가 수행한다.
-- LLM은 tool 호출과 결과 설명만 담당한다.
-- Excel 전체 row를 LLM prompt에 넣지 않는다.
-- schema 검증 없이 prediction하지 않는다.
-- notebook은 참고 자료이며 runtime에서 직접 실행하지 않는다.
-- PPT 과거 성능값을 하드코딩하지 않고 현재 데이터로 다시 계산한다.
+## 무엇을 할 수 있나
 
-## 파일 역할
+- 학습용 Excel 데이터를 업로드하고 데이터 구조를 확인합니다.
+- classification 또는 regression 모델을 학습하고 저장합니다.
+- 저장된 모델로 새 Excel 파일을 예측합니다.
+- 모델 성능, 후보 모델 비교, 예측 결과를 표와 리포트로 확인합니다.
+- Ollama 또는 vLLM 로컬 LLM을 연결해 한국어로 작업을 요청하고 결과를 설명받습니다.
+- Windows 매니저 EXE 하나로 설치, 서버 실행, 삭제를 처리합니다.
 
-- `serving/HD_LLM.ipynb`: 원본 PyCaret notebook reference.
-- `serving/class_extracted.xlsx`: classification 예제 데이터.
-- `serving/Reg_extracted.xlsx`: regression 예제 데이터.
-- `serving/HD현대일렉트릭_과제중간발표.pptx`: 프로젝트 개요 reference.
-- `streamlit_app.py`: Streamlit GUI entrypoint.
-- `src/hd_serving/`: preprocessing, schema, training, inference, tools, LLM router package.
-- `src/hd_serving/pycaret_worker.py`: Python 3.11 PyCaret notebook-parity worker.
-- `models/`: 저장된 model artifact.
-- `data/raw/`: 예제 Excel 복사본.
-- `docs/`: 프로젝트 요약과 notebook source notes.
-- `scripts/`: Linux/macOS 실행 스크립트.
-- `app.py`: 기존 dependency-free Ollama/vLLM browser chat bridge. Legacy로 유지.
+## 전체 흐름
 
-## Windows PowerShell 빠른 설치
+1. `LocalCustomGUI-Manager.exe`를 실행합니다.
+2. `Install / Repair`로 필요한 환경을 설치합니다.
+3. `Run App`을 눌러 Streamlit 서버를 켭니다.
+4. 브라우저에서 `http://127.0.0.1:8791`에 접속합니다.
+5. Excel 업로드, 모델 학습, 예측, 결과 다운로드를 진행합니다.
+6. 필요하면 Manager의 `Uninstall` 탭 또는 Windows 프로그램 추가/제거에서 삭제합니다.
 
-아래 블록은 **README.md와 `streamlit_app.py`가 있는 프로젝트 폴더에서 PowerShell을 열고 그대로 붙여넣어 실행**한다. Miniconda 환경 `local_customgui_windows`를 만들고 그 안에 프로그램을 설치한 뒤 실행한다.
+## 1. EXE 실행 및 설치
 
-```powershell
-$ErrorActionPreference = "Stop"
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$EnvName = "local_customgui_windows"
+프로젝트 폴더의 `LocalCustomGUI-Manager.exe`를 더블클릭합니다. 처음 실행하면 아래와 같은 AIM4LAB 매니저 창이 열립니다.
 
-function Invoke-Checked {
-  $FilePath = $args[0]
-  $Arguments = @($args | Select-Object -Skip 1)
-  & $FilePath @Arguments
-  if ($LASTEXITCODE -ne 0) {
-    throw "명령 실행 실패: $FilePath $($Arguments -join ' ')"
-  }
-}
+![Manager install screen](docs/assets/screenshots/manager-install.png)
 
-if (-not (Test-Path ".\streamlit_app.py")) {
-  throw "streamlit_app.py가 있는 프로젝트 폴더에서 실행하세요."
-}
+설치 단계:
 
-if (Get-Command winget -ErrorAction SilentlyContinue) {
-  if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
-    winget install -e --id Anaconda.Miniconda3 --accept-package-agreements --accept-source-agreements
-  }
-  if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    winget install -e --id Ollama.Ollama --accept-package-agreements --accept-source-agreements
-  }
-} else {
-  Write-Warning "winget이 없어 Miniconda/Ollama 자동 설치를 건너뜁니다. Miniconda를 설치한 뒤 다시 실행하세요."
-}
+1. `Download or verify Ollama model`을 켜 둡니다.
+   기본 모델은 `gemma4:e2b`입니다.
+2. 설치가 끝나자마자 앱을 열고 싶으면 `Launch Streamlit after install`을 켜 둡니다.
+3. `Install / Repair`를 누릅니다.
+4. Manager가 Miniconda, Ollama, conda 환경, Python 패키지, Streamlit 설정, Ollama 모델을 순서대로 확인하고 준비합니다.
+5. 설치가 끝나면 Windows `프로그램 추가/제거`에 `AIM4LAB LocalCustomGUI`가 등록됩니다.
 
-$CondaExe = $null
-$CondaCommand = Get-Command conda -ErrorAction SilentlyContinue
-if ($CondaCommand) {
-  $CondaExe = $CondaCommand.Source
-}
-if (-not $CondaExe) {
-  $CondaCandidates = @(
-    "$env:UserProfile\miniconda3\Scripts\conda.exe",
-    "$env:LocalAppData\miniconda3\Scripts\conda.exe",
-    "$env:ProgramData\miniconda3\Scripts\conda.exe",
-    "$env:ProgramFiles\Miniconda3\Scripts\conda.exe"
-  )
-  $CondaExe = $CondaCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-}
-if (-not $CondaExe) {
-  throw "conda.exe를 찾지 못했습니다. 새 PowerShell을 열어 같은 명령을 다시 실행하거나 Miniconda를 설치하세요."
-}
+설치가 중간에 끊겼거나 다른 PC에서 다시 세팅할 때도 같은 버튼을 다시 누르면 됩니다. 이미 설치된 항목은 확인 후 건너뛰고, 부족한 항목만 보완합니다.
 
-& $CondaExe run -n $EnvName python --version | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Invoke-Checked $CondaExe create -y -n $EnvName --override-channels -c conda-forge python=3.11 pip
-}
+## 2. 서버 실행
 
-Invoke-Checked $CondaExe run -n $EnvName python -m pip install -U pip
-Invoke-Checked $CondaExe run -n $EnvName python -m pip install -r requirements.txt
-Invoke-Checked $CondaExe run -n $EnvName python -m pip install -r requirements-pycaret.txt
-Invoke-Checked $CondaExe run -n $EnvName python -m pip install -e .
+설치 후 Manager의 `Run` 탭에서 서버를 실행합니다.
 
-if (-not (Test-Path ".\.env")) {
-  Copy-Item ".\.env.example" ".\.env"
-}
+![Manager run screen](docs/assets/screenshots/manager-run.png)
 
-$OllamaExe = $null
-$OllamaCommand = Get-Command ollama -ErrorAction SilentlyContinue
-if ($OllamaCommand) {
-  $OllamaExe = $OllamaCommand.Source
-}
-if (-not $OllamaExe) {
-  $OllamaCandidates = @(
-    "$env:LocalAppData\Programs\Ollama\ollama.exe",
-    "$env:ProgramFiles\Ollama\ollama.exe"
-  )
-  $OllamaExe = $OllamaCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-}
-if ($OllamaExe) {
-  & $OllamaExe list | Out-Null
-  if ($LASTEXITCODE -ne 0) {
-    Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden
-    Start-Sleep -Seconds 5
-  }
-  Invoke-Checked $OllamaExe pull gemma4:e2b
-} else {
-  Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM을 쓰려면 Ollama 설치와 모델 다운로드가 필요합니다."
-}
+실행 단계:
 
-$StreamlitConfigDir = Join-Path $env:UserProfile ".streamlit"
-New-Item -ItemType Directory -Force -Path $StreamlitConfigDir | Out-Null
-@"
-[server]
-headless = true
-showEmailPrompt = false
+1. `Run App`을 누릅니다.
+2. 로컬 URL `http://127.0.0.1:8791`이 표시됩니다.
+3. `Open Browser`를 누르거나 브라우저 주소창에 URL을 입력합니다.
+4. 서버를 멈추려면 `Stop App`을 누릅니다.
 
-[browser]
-gatherUsageStats = false
-"@ | Set-Content -LiteralPath (Join-Path $StreamlitConfigDir "config.toml") -Encoding UTF8
+서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 서버는 종료되지 않고 Windows 시스템 트레이로 숨겨집니다. 트레이 아이콘을 우클릭하면 `Open GUI`, `Restart Server`, `Quit Server`, `Open Browser`를 사용할 수 있습니다.
 
-$env:STREAMLIT_SERVER_HEADLESS = "true"
-$env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
-$env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
+## 3. 서버 기능
 
-Write-Host ""
-Write-Host "설치 완료. Streamlit을 실행합니다: http://127.0.0.1:8791"
-Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
-```
+브라우저 왼쪽 `Runtime` 영역에서 로컬 LLM 서버를 관리합니다.
 
-다음부터는 설치 과정을 반복하지 않고 아래만 실행하면 된다.
+![Streamlit runtime screen](docs/assets/screenshots/streamlit-home.png)
 
-```powershell
-$env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
-$env:STREAMLIT_SERVER_HEADLESS = "true"
-$env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
-& "$env:UserProfile\miniconda3\Scripts\conda.exe" run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
-```
+주요 설정:
 
-접속 주소:
+- `Backend`: Ollama 또는 vLLM을 선택합니다.
+- `Base URL`: Ollama는 보통 `http://127.0.0.1:11434`, vLLM은 OpenAI-compatible endpoint를 입력합니다.
+- `Model`: 사용할 로컬 모델을 선택합니다.
+- `Context Length`: 기본값은 `16384`입니다.
+- `Loading` / `Unloading`: Ollama 모델 로딩 상태를 확인하거나 정리합니다.
+- `Health`: LLM endpoint와 모델 목록 연결 상태를 확인합니다.
+- `Save Config`: 현재 설정을 `config.json`에 저장합니다.
+
+LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측, 모델 관리 기능은 계속 사용할 수 있습니다.
+
+## 4. 사용자 사용법
+
+### Excel 업로드
+
+상단의 `학습용 Excel 데이터셋 업로드 / 관리`를 펼치고 `Upload` 버튼으로 `.xlsx` 또는 `.xls` 파일을 선택합니다.
+
+![Dataset upload screen](docs/assets/screenshots/streamlit-upload.png)
+
+업로드 후 진행:
+
+1. 데이터셋이 등록되면 컬럼과 데이터 타입을 확인합니다.
+2. 데이터 타입이 자동 판별되지 않으면 classification 또는 regression을 선택합니다.
+3. `현재 학습용 dataset workflow 다시 실행` 또는 채팅 입력창을 통해 학습/예측 흐름을 실행합니다.
+
+### 모델 학습과 결과 확인
+
+학습이 끝나면 저장 모델 비교표와 자동 후보 모델 비교표가 표시됩니다.
+
+![Model results screen](docs/assets/screenshots/streamlit-results.png)
+
+확인할 항목:
+
+1. 저장된 모델의 `model_id`와 `best_model`을 확인합니다.
+2. classification은 Accuracy, AUC, F1 등 주요 지표를 확인합니다.
+3. regression은 R2, RMSE 등 주요 지표를 확인합니다.
+4. 필요한 모델을 선택해 이후 예측에 사용합니다.
+5. 결과 리포트가 생성되면 PDF 또는 Markdown으로 다운로드합니다.
+
+### 채팅으로 요청하기
+
+하단 채팅 입력창에 자연어로 요청할 수 있습니다.
+
+예시:
 
 ```text
-http://127.0.0.1:8791
+방금 올린 엑셀 요약해줘
+분류 모델 학습해줘
+저장된 분류 모델로 예측해줘
+모델 성능 비교표를 설명해줘
+예측 결과 리포트 만들어줘
 ```
 
-## PyCaret 확인
+LLM은 요청을 해석해 데이터 요약, 학습, 예측, 성능 비교, 리포트 생성 도구를 호출합니다. 실제 예측은 저장된 모델 artifact가 수행합니다.
 
-Windows 빠른 설치는 PyCaret을 같은 Miniconda 환경에 설치하고 기본 학습 엔진으로 사용한다. 설치 확인은 아래처럼 한다.
+## 5. 삭제
 
-```powershell
-conda run -n local_customgui_windows python -c "import pycaret; print(pycaret.__version__)"
-```
+Manager의 `Uninstall` 탭에서 삭제할 항목을 선택합니다.
 
-## Windows EXE 런처 선택 빌드
+![Manager uninstall screen](docs/assets/screenshots/manager-uninstall.png)
 
-전체 Python/PyCaret/Ollama를 EXE 하나에 모두 묶는 방식은 권장하지 않는다. 대신 설치된 `local_customgui_windows` conda 환경을 실행하는 가벼운 런처 EXE를 만들 수 있다.
+삭제 단계:
 
-설치, 실행, 삭제를 한 창에서 처리하는 AIM4LAB Manager EXE:
+1. `Recommended`를 누르면 일반적인 재설치 테스트에 필요한 항목이 선택됩니다.
+2. 필요한 경우 `Select All` 또는 개별 체크박스로 삭제 범위를 조정합니다.
+3. 입력칸에 `DELETE`를 입력합니다.
+4. `Uninstall Selected`를 누릅니다.
+5. 확인 창에서 삭제 대상 목록을 다시 확인한 뒤 진행합니다.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_manager.ps1
-```
+기본 추천 삭제 항목:
 
-생성 파일:
+- conda 환경 `local_customgui_windows`
+- Ollama 모델 `gemma4:e2b`
+- runtime state, logs, caches
+- `.env`
+- Windows 프로그램 추가/제거 등록 항목
+
+프로젝트 폴더 자체는 자동으로 삭제하지 않습니다. 모델 artifact와 Streamlit 사용자 설정은 별도 체크박스를 켰을 때만 삭제됩니다.
+
+Windows 설정의 `프로그램 추가/제거`에서 `AIM4LAB LocalCustomGUI`를 제거해도 같은 Manager Uninstall 화면으로 이동합니다.
+
+## 6. 자주 생기는 상황
+
+`conda` 명령이 PowerShell에서 인식되지 않아도 괜찮습니다. Manager는 일반적인 Miniconda 설치 경로에서 `conda.exe`를 직접 찾아 실행합니다.
+
+Ollama 모델 다운로드는 처음 한 번 오래 걸릴 수 있습니다. 모델 파일은 EXE 안에 들어있지 않고 Ollama 모델 저장소에 따로 저장됩니다.
+
+Streamlit이 이메일 입력을 묻는 경우 Manager 설치를 다시 실행하면 사용자 Streamlit 설정이 준비됩니다. 수동 실행 시에는 [수동 설치 문서](docs/manual_installation.md)의 실행 명령을 사용하세요.
+
+Ollama Desktop의 Context length는 16k 근처로 맞추는 것을 권장합니다. 앱 내부 `Context Length` 기본값도 `16384`입니다.
+
+## 7. 문서와 파일 구조
+
+- [수동 설치 및 개발자 명령](docs/manual_installation.md)
+- [프로젝트 요약](docs/project_summary.md)
+- [원본 노트북 참고 메모](docs/source_notes.md)
+
+주요 파일:
 
 ```text
-LocalCustomGUI-Manager.exe
-```
-
-이 Manager EXE는 AIM4LAB 로고가 들어간 GUI 창에서 Install, Run, Uninstall 탭을 제공한다. 설치는 Miniconda/Ollama 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 준비, Streamlit 실행까지 진행한다. 삭제는 선택한 항목만 지우며, 실제 삭제 전 `DELETE` 입력과 확인 창을 요구한다. 배포 시에는 이 파일 하나를 기본 안내 대상으로 쓰면 된다.
-
-Streamlit 서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 서버는 종료되지 않고 Windows 시스템 트레이로 숨겨진다. 트레이 아이콘 우클릭 메뉴에서 `Open GUI`, `Restart Server`, `Quit Server`, `Open Browser`를 사용할 수 있다.
-
-설치가 완료되면 Manager가 현재 사용자 기준 Windows `프로그램 추가/제거` 목록에 `AIM4LAB LocalCustomGUI`를 등록한다. Windows 설정에서 제거를 누르면 `LocalCustomGUI-Manager.exe --uninstall`이 실행되어 Manager의 Uninstall 탭으로 바로 이동한다.
-
-패키징 관련 파일 구조:
-
-```text
-packaging/windows/                 Windows EXE 소스와 빌드 스크립트
-packaging/windows/build/           PyInstaller 임시 빌드 폴더
-packaging/windows/specs/           PyInstaller spec 출력 폴더
-LocalCustomGUI-Manager.exe          Manager 최종 EXE
-dist/                              선택 빌드용 개별 EXE 출력 폴더
-Logo/logo_aim4lab.png              Manager EXE에 포함되는 AIM4LAB 로고
-Icon/aim4lab_app_icon.ico          Windows EXE 파일 아이콘
-Icon/aim4lab_app_icon.png          Manager 창 아이콘
-```
-
-설치와 실행을 자동으로 처리하는 Setup EXE:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_setup.ps1
-```
-
-생성 파일:
-
-```text
-dist\LocalCustomGUI-Setup.exe
-```
-
-이 Setup EXE는 Miniconda/Ollama 설치 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 다운로드 후 Streamlit 실행까지 순서대로 진행한다. 프로젝트 폴더 또는 `dist` 폴더에서 실행해야 한다.
-
-이미 설치된 환경을 실행만 하는 가벼운 런처 EXE:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_launcher.ps1
-```
-
-생성 파일:
-
-```text
-dist\LocalCustomGUI-Windows.exe
-```
-
-이 EXE는 프로젝트 폴더와 `local_customgui_windows` conda 환경이 이미 설치된 PC에서 Streamlit 앱을 실행한다. Ollama와 모델 파일은 EXE에 포함되지 않으며 기존 설치를 사용한다.
-
-설치/실행 흔적을 항목별로 선택 삭제하는 Delete EXE:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_delete.ps1
-```
-
-생성 파일:
-
-```text
-dist\LocalCustomGUI-Delete.exe
-```
-
-이 EXE는 conda 환경, Ollama 모델, 런타임 state/log/cache, `.env`, 모델 artifact, Streamlit 사용자 설정을 메뉴에서 선택한 뒤 삭제한다. 실제 삭제 전 선택 대상 목록을 다시 보여주며 `DELETE`를 입력해야 진행한다. 프로젝트 폴더 자체는 자동 삭제하지 않는다.
-
-## Linux/macOS 설치
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -r requirements.txt
-python -m pip install -e .
-cp .env.example .env
-```
-
-## Ollama / vLLM 설정
-
-`.env.example` 기준:
-
-```bash
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:e2b
-VLLM_BASE_URL=http://localhost:8000/v1
-VLLM_MODEL=local-model
-VLLM_API_KEY=EMPTY
-```
-
-Ollama 예시:
-
-```bash
-ollama serve
-ollama pull gemma4:e2b
-```
-
-Docker Ollama를 쓰는 경우 컨테이너가 `11434:11434`로 노출되어 있으면 GUI의 Base URL은 그대로 `http://127.0.0.1:11434`를 사용한다. GUI에서 Base URL 아래 `Connect`를 누르면 현재 Ollama의 `/api/tags` 모델 목록을 읽어 `Model` 선택 목록에 표시한다.
-
-vLLM은 OpenAI-compatible endpoint가 필요하다:
-
-```text
-http://127.0.0.1:8000/v1/chat/completions
-http://127.0.0.1:8000/v1/models
-```
-
-Windows에서 Ollama를 사용하려면 Ollama 앱을 실행한 뒤 모델을 받는다.
-
-```powershell
-ollama pull gemma4:e2b
-```
-
-vLLM은 OpenAI-compatible endpoint가 필요하며, 기본 config는 일반 로컬 endpoint를 사용한다.
-
-## 사용 흐름
-
-1. 메인 채팅 화면에서 `.xlsx` 또는 `.xls` 파일 업로드.
-2. 업로드 즉시 Ollama tool-calling agent가 데이터 검증, 데이터 유형 판별, 모델 학습, schema 검증, batch prediction tool 호출을 결정하고 실행.
-3. 각 단계 결과는 채팅 메시지의 접기/펼치기 블록으로 표시하며, `LLM Reasoning`은 Ollama가 실제 반환한 `thinking`만 표시하고 deterministic 실행 내역은 `Execution trace`로 분리.
-4. 예측 결과 메시지를 펼치면 preview와 CSV/XLSX 다운로드 버튼을 제공.
-5. 이후 “방금 올린 엑셀 요약해줘”, “분류 모델 다시 학습해줘”, “예측 결과 설명해줘”, “성능 요약해줘”처럼 요청하면 LLM workflow가 deterministic tool을 호출해 답변.
-6. 모델 artifact 적용, metrics/schema 확인, 삭제는 업로드 영역 아래 `Model Management` 패널에서 수행.
-
-## Notebook parity
-
-Classification:
-
-- `Result == 1.0 -> label 1`, else `0`.
-- target: `label`.
-- feature 제외: `Result`, `TRVmax[kV]`.
-- `dropna()` 수행 및 dropped row 수 기록.
-- runtime: PyCaret `setup(..., session_id=0, train_size=0.9)` 후 `compare_models()`.
-
-Regression:
-
-- target: `TRVmax[kV]`.
-- feature 제외: `Time`, `Result`, `CZM`, `Test`, `TRVmax[kV]`.
-- `dropna()` 수행 및 dropped row 수 기록.
-- runtime: PyCaret `setup(..., session_id=0, train_size=0.9)` 후 `compare_models()`.
-
-## CLI
-
-PowerShell:
-
-```powershell
-conda run -n local_customgui_windows python -m hd_serving.train_classification --input data\raw\class_extracted.xlsx
-conda run -n local_customgui_windows python -m hd_serving.train_regression --input data\raw\Reg_extracted.xlsx
-conda run -n local_customgui_windows python -m hd_serving.inference --task classification --model latest --input data\raw\class_extracted.xlsx --output predictions_classification.xlsx
-conda run -n local_customgui_windows python -m hd_serving.inference --task regression --model latest --input data\raw\Reg_extracted.xlsx --output predictions_regression.xlsx
-```
-
-Linux/macOS:
-
-```bash
-source .venv/bin/activate
-python -m hd_serving.train_classification --input data/raw/class_extracted.xlsx
-python -m hd_serving.train_regression --input data/raw/Reg_extracted.xlsx
-python -m hd_serving.inference --task classification --model latest --input data/raw/class_extracted.xlsx --output predictions_classification.xlsx
-python -m hd_serving.inference --task regression --model latest --input data/raw/Reg_extracted.xlsx --output predictions_regression.xlsx
-```
-
-## Artifact 구조
-
-```text
-models/
-  classification/
-    latest/
-      model.joblib
-      schema.json
-      metrics.json
-      model_card.md
-    YYYYMMDD_HHMMSS/
-      ...
-  regression/
-    latest/
-      ...
-```
-
-`latest`는 symlink를 우선 사용하고, 실패하면 directory copy로 관리한다.
-
-## Schema mismatch 처리
-
-Prediction은 저장된 `schema.json`의 `features` 목록을 기준으로 수행한다.
-
-- missing feature가 있으면 예측하지 않는다.
-- extra column은 무시할 수 있지만, ignored/extra column 목록을 사용자에게 보여준다.
-- target/ignored column은 prediction input에 있어도 feature로 쓰지 않는다.
-
-## LLM 안전 원칙
-
-- LLM은 예측값, 확률, metric, explanation 값을 임의 생성하지 않는다.
-- 데이터 요약/검증/학습/예측/설명은 deterministic tool 결과를 기반으로 한다.
-- LLM output을 Python 코드로 실행하지 않는다.
-- shell command tool은 제공하지 않는다.
-- 로컬 LLM 실패 시 cloud fallback을 자동 사용하지 않는다.
-
-## Legacy Browser GUI
-
-기존 간단 채팅 GUI도 유지된다.
-
-```powershell
-conda run -n local_customgui_windows python app.py --host 127.0.0.1 --port 8790 --open
-```
-
-접속:
-
-```text
-http://127.0.0.1:8790
-```
-
-## 검증
-
-PowerShell:
-
-```powershell
-conda run -n local_customgui_windows python -m py_compile app.py streamlit_app.py src\hd_serving\__init__.py src\hd_serving\artifacts.py src\hd_serving\constants.py src\hd_serving\data_loader.py src\hd_serving\explanation.py src\hd_serving\inference.py src\hd_serving\llm_client.py src\hd_serving\nemoclaw_vllm_runtime.py src\hd_serving\orchestrator.py src\hd_serving\preprocessing.py src\hd_serving\pycaret_bridge.py src\hd_serving\pycaret_worker.py src\hd_serving\schema.py src\hd_serving\tools.py src\hd_serving\training.py src\hd_serving\train_classification.py src\hd_serving\train_regression.py
-conda run -n local_customgui_windows python -m pytest
-```
-
-Linux/macOS:
-
-```bash
-source .venv/bin/activate
-python -m py_compile app.py streamlit_app.py src/hd_serving/*.py
-node --check static/app.js
-bash -n scripts/run.sh scripts/run_streamlit.sh
-pytest
+LocalCustomGUI-Manager.exe          Windows 설치/실행/삭제 매니저
+streamlit_app.py                    사용자용 Streamlit GUI
+src/hd_serving/                     데이터 처리, 학습, 예측, LLM 도구 패키지
+models/                             저장된 모델 artifact
+data/raw/                           예제 Excel 데이터
+docs/assets/screenshots/            README 스크린샷
+packaging/windows/                  Windows EXE 빌드 소스
 ```
