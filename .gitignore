@@ -28,3 +28,6 @@ models/*/latest
 
 # Build metadata
 *.egg-info/
+build/
+dist/
+*.spec
