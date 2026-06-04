@@ -629,7 +629,7 @@ def scroll_to_chat_bottom() -> None:
 
 def backend_defaults(config: dict[str, Any], backend: str) -> dict[str, Any]:
     defaults = {
-        "ollama": {"base_url": "http://127.0.0.1:11434", "model": "gemma4:e2b"},
+        "ollama": {"base_url": "http://127.0.0.1:11434", "model": "gemma4:e2b", "num_ctx": 16384},
         "vllm": {
             "base_url": "http://127.0.0.1:8000/v1",
             "model": "local-model",
@@ -739,7 +739,7 @@ def load_selected_llm_model(runtime: dict[str, Any], *, source: str = "manual") 
                 "stream": False,
                 "think": False,
                 "keep_alive": "30m",
-                "options": {"temperature": 0, "num_predict": 2},
+                "options": {"temperature": 0, "num_predict": 2, "num_ctx": int(runtime.get("num_ctx") or 16384)},
             },
             timeout=timeout,
         )
@@ -917,6 +917,24 @@ def render_sidebar() -> dict[str, Any]:
     else:
         st.sidebar.caption("Ollama와 vLLM은 Health로 endpoint 상태와 모델 목록을 확인합니다.")
     timeout_sec = st.sidebar.number_input("Timeout Sec", min_value=10, max_value=3600, value=int(config.get("timeout_sec", 240)), step=10)
+    if backend == "ollama":
+        context_length = st.sidebar.number_input(
+            "Context Length",
+            min_value=2048,
+            max_value=131072,
+            value=int(backend_cfg.get("num_ctx") or 16384),
+            step=1024,
+            help="Ollama /api/chat options.num_ctx 값입니다. 기본값은 16384입니다.",
+        )
+    else:
+        context_length = st.sidebar.number_input(
+            "Context Length",
+            min_value=2048,
+            max_value=131072,
+            value=int(backend_cfg.get("context_window") or backend_cfg.get("max_context_tokens") or 8192),
+            step=1024,
+            help="앱이 LLM 입력/출력 토큰 예산을 계산할 때 쓰는 context window입니다.",
+        )
     model_runtime = {
         "backend": backend,
         "base_url": base_url.strip(),
@@ -924,6 +942,11 @@ def render_sidebar() -> dict[str, Any]:
         "api_key": api_key,
         "timeout_sec": int(timeout_sec),
     }
+    if backend == "ollama":
+        model_runtime["num_ctx"] = int(context_length)
+    else:
+        model_runtime["context_window"] = int(context_length)
+        model_runtime["max_context_tokens"] = int(context_length)
     sync_ollama_loaded_model(model_runtime)
 
     st.sidebar.caption("Model control")
@@ -965,9 +988,9 @@ def render_sidebar() -> dict[str, Any]:
     runtime["max_tokens"] = int(config.get("max_tokens", 2048))
     if backend == "vllm":
         if backend_cfg.get("context_window"):
-            runtime["context_window"] = int(backend_cfg["context_window"])
+            runtime["context_window"] = int(context_length)
         if backend_cfg.get("max_context_tokens"):
-            runtime["max_context_tokens"] = int(backend_cfg["max_context_tokens"])
+            runtime["max_context_tokens"] = int(context_length)
         template_kwargs = backend_cfg.get("chat_template_kwargs")
         if isinstance(template_kwargs, dict):
             runtime["chat_template_kwargs"] = template_kwargs
@@ -981,8 +1004,12 @@ def render_sidebar() -> dict[str, Any]:
             "system_prompt": system_prompt,
             backend: {"base_url": runtime["base_url"], "model": runtime["model"]},
         }
+        if backend == "ollama":
+            next_cfg["ollama"]["num_ctx"] = int(context_length)
         if backend == "vllm":
             next_cfg["vllm"]["api_key"] = api_key or "EMPTY"
+            next_cfg["vllm"]["context_window"] = int(context_length)
+            next_cfg["vllm"]["max_context_tokens"] = int(context_length)
         st.session_state.config = deep_merge(config, next_cfg)
         save_config(st.session_state.config)
         st.sidebar.success("config.json 저장 완료")
@@ -1766,7 +1793,7 @@ def llm_context_limit(runtime: dict[str, Any]) -> int:
         except (TypeError, ValueError):
             pass
     backend = str(runtime.get("backend") or "").lower()
-    return 8192 if backend == "vllm" else 8192
+    return 8192 if backend == "vllm" else 16384
 
 
 def trim_llm_content_to_budget(content: str, token_budget: int) -> str:

@@ -41,6 +41,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "ollama": {
         "base_url": "http://127.0.0.1:11434",
         "model": "gemma4:e2b",
+        "num_ctx": 16384,
     },
     "vllm": {
         "base_url": "http://127.0.0.1:8000/v1",
@@ -284,6 +285,7 @@ def call_ollama(config: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     timeout = float(req.get("timeout_sec") or config.get("timeout_sec") or 240)
     temperature = float(req.get("temperature") if req.get("temperature") is not None else config.get("temperature", 0.3))
     max_tokens = int(req.get("max_tokens") or config.get("max_tokens") or 2048)
+    num_ctx = int(req.get("num_ctx") or backend_cfg.get("num_ctx") or 16384)
     messages = normalize_messages(req.get("messages"), str(req.get("system_prompt") or config.get("system_prompt") or ""))
     started = time.time()
     payload: dict[str, Any] = {
@@ -293,6 +295,7 @@ def call_ollama(config: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
         "options": {
             "temperature": temperature,
             "num_predict": max_tokens,
+            "num_ctx": num_ctx,
         },
     }
     if "tools" in req:
@@ -332,6 +335,7 @@ def stream_ollama(config: dict[str, Any], req: dict[str, Any]) -> Iterator[dict[
     timeout = float(req.get("timeout_sec") or config.get("timeout_sec") or 240)
     temperature = float(req.get("temperature") if req.get("temperature") is not None else config.get("temperature", 0.3))
     max_tokens = int(req.get("max_tokens") or config.get("max_tokens") or 2048)
+    num_ctx = int(req.get("num_ctx") or backend_cfg.get("num_ctx") or 16384)
     messages = normalize_messages(req.get("messages"), str(req.get("system_prompt") or config.get("system_prompt") or ""))
     payload: dict[str, Any] = {
         "model": model,
@@ -340,6 +344,7 @@ def stream_ollama(config: dict[str, Any], req: dict[str, Any]) -> Iterator[dict[
         "options": {
             "temperature": temperature,
             "num_predict": max_tokens,
+            "num_ctx": num_ctx,
         },
     }
     if "think" in req:
