@@ -4,9 +4,9 @@
 
 ![Streamlit start screen](docs/assets/screenshots/streamlit-home.png)
 
-<video src="tutorial_video.mp4" controls width="100%"></video>
+[![튜토리얼 영상 보기](docs/assets/screenshots/tutorial-video-thumbnail.png)](tutorial_video.mp4?raw=1)
 
-[튜토리얼 영상 파일 열기](tutorial_video.mp4)
+GitHub README에서 영상이 바로 재생되지 않으면 [튜토리얼 영상 파일 열기](tutorial_video.mp4?raw=1)를 눌러 확인하세요.
 
 ## 무엇을 할 수 있나
 
