@@ -161,6 +161,22 @@ conda run -n local_customgui_windows python -c "import pycaret; print(pycaret.__
 
 전체 Python/PyCaret/Ollama를 EXE 하나에 모두 묶는 방식은 권장하지 않는다. 대신 설치된 `local_customgui_windows` conda 환경을 실행하는 가벼운 런처 EXE를 만들 수 있다.
 
+설치와 실행을 자동으로 처리하는 Setup EXE:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\build_windows_setup.ps1
+```
+
+생성 파일:
+
+```text
+dist\LocalCustomGUI-Setup.exe
+```
+
+이 Setup EXE는 Miniconda/Ollama 설치 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 다운로드 후 Streamlit 실행까지 순서대로 진행한다. 프로젝트 폴더 또는 `dist` 폴더에서 실행해야 한다.
+
+이미 설치된 환경을 실행만 하는 가벼운 런처 EXE:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\build_windows_launcher.ps1
 ```
