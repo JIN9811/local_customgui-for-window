@@ -36,10 +36,8 @@ $ErrorActionPreference = "Stop"
 $EnvName = "local_customgui_windows"
 
 function Invoke-Checked {
-  param(
-    [Parameter(Mandatory=$true)][string]$FilePath,
-    [Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments
-  )
+  $FilePath = $args[0]
+  $Arguments = @($args | Select-Object -Skip 1)
   & $FilePath @Arguments
   if ($LASTEXITCODE -ne 0) {
     throw "명령 실행 실패: $FilePath $($Arguments -join ' ')"
