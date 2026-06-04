@@ -79,6 +79,30 @@ if (-not (Test-Path ".\.env")) {
   Copy-Item ".\.env.example" ".\.env"
 }
 
+$OllamaExe = $null
+$OllamaCommand = Get-Command ollama -ErrorAction SilentlyContinue
+if ($OllamaCommand) {
+  $OllamaExe = $OllamaCommand.Source
+}
+if (-not $OllamaExe) {
+  $OllamaCandidates = @(
+    "$env:LocalAppData\Programs\Ollama\ollama.exe",
+    "$env:ProgramFiles\Ollama\ollama.exe"
+  )
+  $OllamaExe = $OllamaCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if ($OllamaExe) {
+  try {
+    & $OllamaExe list | Out-Null
+  } catch {
+    Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden
+    Start-Sleep -Seconds 5
+  }
+  & $OllamaExe pull llama3.1:8b
+} else {
+  Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM을 쓰려면 Ollama 설치와 모델 다운로드가 필요합니다."
+}
+
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
 
 Write-Host ""
