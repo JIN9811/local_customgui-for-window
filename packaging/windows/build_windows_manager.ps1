@@ -61,7 +61,7 @@ Invoke-Checked $CondaExe @(
   "--windowed",
   "--workpath", ".\packaging\windows\build",
   "--specpath", ".\packaging\windows\specs",
-  "--distpath", ".\dist",
+  "--distpath", ".",
   "--name", "LocalCustomGUI-Manager",
   "--icon", $IconPath,
   "--hidden-import", "tkinter.messagebox",
@@ -72,4 +72,4 @@ Invoke-Checked $CondaExe @(
 )
 
 Write-Host ""
-Write-Host "Manager EXE created: $ProjectRoot\dist\LocalCustomGUI-Manager.exe"
+Write-Host "Manager EXE created: $ProjectRoot\LocalCustomGUI-Manager.exe"

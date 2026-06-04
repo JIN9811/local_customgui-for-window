@@ -27,7 +27,7 @@ cd /home/jin/local_customgui
 source .venv/bin/activate
 python -m py_compile app.py streamlit_app.py src/hd_serving/*.py
 node --check static/app.js
-bash -n run.sh run_streamlit.sh
+bash -n scripts/run.sh scripts/run_streamlit.sh
 pytest
 ```
 
@@ -48,6 +48,7 @@ Only run an actual LLM chat call when Ollama or vLLM is already serving a model.
 - `models/`: saved joblib/schema/metrics/model_card artifacts.
 - `data/raw/`: local example Excel files.
 - `docs/`: project summary and notebook source notes.
+- `scripts/`: Linux/macOS launch scripts.
 - `app.py`: legacy Python HTTP server and Ollama/vLLM bridge.
 - `index.html`, `static/app.js`, `static/style.css`: legacy browser chat GUI.
 - `config.json`: local backend/model/system-prompt defaults.

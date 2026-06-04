@@ -23,6 +23,7 @@
 - `models/`: 저장된 model artifact.
 - `data/raw/`: 예제 Excel 복사본.
 - `docs/`: 프로젝트 요약과 notebook source notes.
+- `scripts/`: Linux/macOS 실행 스크립트.
 - `app.py`: 기존 dependency-free Ollama/vLLM browser chat bridge. Legacy로 유지.
 
 ## Windows PowerShell 빠른 설치
@@ -170,7 +171,7 @@ powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_manag
 생성 파일:
 
 ```text
-dist\LocalCustomGUI-Manager.exe
+LocalCustomGUI-Manager.exe
 ```
 
 이 Manager EXE는 AIM4LAB 로고가 들어간 GUI 창에서 Install, Run, Uninstall 탭을 제공한다. 설치는 Miniconda/Ollama 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 준비, Streamlit 실행까지 진행한다. 삭제는 선택한 항목만 지우며, 실제 삭제 전 `DELETE` 입력과 확인 창을 요구한다. 배포 시에는 이 파일 하나를 기본 안내 대상으로 쓰면 된다.
@@ -183,7 +184,8 @@ Streamlit 서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 
 packaging/windows/                 Windows EXE 소스와 빌드 스크립트
 packaging/windows/build/           PyInstaller 임시 빌드 폴더
 packaging/windows/specs/           PyInstaller spec 출력 폴더
-dist/                              최종 EXE 출력 폴더
+LocalCustomGUI-Manager.exe          Manager 최종 EXE
+dist/                              선택 빌드용 개별 EXE 출력 폴더
 Logo/logo_aim4lab.png              Manager EXE에 포함되는 AIM4LAB 로고
 Icon/aim4lab_app_icon.ico          Windows EXE 파일 아이콘
 Icon/aim4lab_app_icon.png          Manager 창 아이콘
@@ -390,6 +392,6 @@ Linux/macOS:
 source .venv/bin/activate
 python -m py_compile app.py streamlit_app.py src/hd_serving/*.py
 node --check static/app.js
-bash -n run.sh run_streamlit.sh
+bash -n scripts/run.sh scripts/run_streamlit.sh
 pytest
 ```
