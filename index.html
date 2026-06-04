@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local Custom GUI</title>
+    <link rel="icon" type="image/svg+xml" href="/Icon/hd_hyundai_streamlit_avatar.svg" />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="chat-panel">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Local LLM GUI</p>
+            <h1>Custom Local Assistant</h1>
+            <p class="subhead">Python server -> Ollama or vLLM -> browser chat surface.</p>
+          </div>
+          <div class="runtime-pill">
+            <span id="status-dot" class="dot idle"></span>
+            <span id="status-label">READY</span>
+          </div>
+        </header>
+
+        <aside class="settings-card">
+          <div class="settings-grid">
+            <label>
+              Backend
+              <select id="backend-input">
+                <option value="ollama">Ollama</option>
+                <option value="vllm">vLLM</option>
+              </select>
+            </label>
+            <label>
+              Base URL
+              <input id="base-url-input" type="text" spellcheck="false" />
+            </label>
+            <label class="connect-field">
+              Connection
+              <button id="btn-connect" class="btn" type="button">Connect</button>
+            </label>
+            <label>
+              Model
+              <select id="model-input"></select>
+            </label>
+            <label>
+              API Key
+              <input id="api-key-input" type="password" placeholder="vLLM only, usually EMPTY" autocomplete="new-password" />
+            </label>
+            <label>
+              Temperature
+              <input id="temperature-input" type="number" min="0" max="2" step="0.05" />
+            </label>
+            <label>
+              Max Tokens
+              <input id="max-tokens-input" type="number" min="1" max="32768" step="128" />
+            </label>
+          </div>
+          <label class="system-prompt-label">
+            System Prompt
+            <textarea id="system-prompt-input" rows="3"></textarea>
+          </label>
+          <div class="button-row">
+            <button id="btn-health" class="btn">Health Check</button>
+            <button id="btn-save-config" class="btn">Save Config</button>
+            <button id="btn-clear" class="btn ghost">Clear Chat</button>
+          </div>
+        </aside>
+
+        <section id="chat-log" class="chat-log" aria-live="polite"></section>
+
+        <footer class="composer">
+          <textarea id="message-input" rows="4" placeholder="메시지를 입력하세요. Shift+Enter는 줄바꿈, Enter는 전송."></textarea>
+          <div class="composer-actions">
+            <span class="hint">Session memory is browser-side only. Server restart does not keep chat history.</span>
+            <button id="btn-send" class="btn primary">Send</button>
+          </div>
+        </footer>
+      </section>
+    </main>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

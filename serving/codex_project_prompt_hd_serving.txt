@@ -1,0 +1,844 @@
+# Codex Project Prompt: HD현대일렉트릭 수치형 데이터 기반 ML + Local LLM Serving Program
+
+당신은 이 저장소를 정리하고 구현하는 Codex 엔지니어다. 목표는 기존 `HD_LLM.ipynb`의 분류/회귀 ML 로직을 재현 가능한 Python 패키지로 분리하고, Streamlit GUI에서 사용자가 Excel 데이터를 업로드하여 학습/검증/예측/LLM 질의응답을 수행할 수 있는 local LLM 기반 serving 프로그램을 만드는 것이다.
+
+이 프롬프트의 요구사항을 우선순위 높게 따른다. 구현 중 불명확한 부분이 있으면 합리적인 MVP 결정을 내리고, README에 결정 내용을 명시한다.
+
+---
+
+## 0. 현재 업로드/소스 파일 역할
+
+현재 프로젝트의 입력 파일은 다음과 같다.
+
+- `HD_LLM.ipynb`: 핵심 notebook 코드. PyCaret 기반 classification/regression 모델 탐색 코드가 들어 있다.
+- `class_extracted.xlsx`: classification용 수치형 Excel 데이터.
+- `Reg_extracted.xlsx`: regression용 수치형 Excel 데이터.
+- `HD현대일렉트릭_과제중간발표.pptx`: 프로젝트 개요, 문제 정의, 성능 해석, SHAP/이미지 DB 계획 등이 담긴 발표자료.
+- `파일-설명.txt`: 파일 역할 설명. 엑셀은 데이터, PPT는 프로젝트 개요, ipynb는 핵심 코드라고 설명한다.
+
+발표자료 기준 프로젝트 목표는 형상/시험 변수 기반 고압차단기 성능 예측 모델을 만드는 것이다. 수치형 DB로 회귀와 분류 작업을 수행했고, 회귀가 어렵기 때문에 차단 성공/실패 이진분류 문제로 전환하는 방향이 포함되어 있다. 분류 target은 `Result` 열을 사용하며, `Result == 1.0`이면 차단성공 Class 1, 그 외는 차단실패 Class 0으로 정의한다.
+
+---
+
+## 1. 기존 notebook에서 반드시 반영할 로직
+
+### 1.1 Classification notebook logic
+
+기존 notebook의 classification 로직은 다음과 같다.
+
+```python
+import numpy as np
+import pandas as pd
+from pycaret.classification import *
+
+df = pd.read_excel('C:/Users/user/class_extracted.xlsx')
+df = df.dropna()
+df = df.reset_index(drop=True)
+
+label = np.where(df['Result'] == 1.0, int(1), int(0))
+label = label.reshape(-1, 1)
+
+df['label'] = label
+df = df.drop(['Result', 'TRVmax[kV]'], axis=1)
+
+setup = setup(data=df, target='label', session_id=0, train_size=0.9)
+best_model = compare_models()
+evaluate_model(best_model)
+```
+
+반드시 유지할 핵심 정의:
+
+- classification label: `Result == 1.0 -> 1`, else `0`.
+- classification target column: 새로 만든 `label`.
+- classification에서 feature로 쓰면 안 되는 column: `Result`, `TRVmax[kV]`.
+- notebook의 절대경로 `C:/Users/user/...`는 절대 사용하지 말고 project-relative path 또는 Streamlit uploaded file을 사용한다.
+- notebook처럼 `dropna()`를 수행하되, 제거된 row 수를 UI와 logs에 표시한다.
+
+### 1.2 Regression notebook logic
+
+기존 notebook의 regression 로직은 다음과 같다.
+
+```python
+import numpy as np
+import pandas as pd
+from pycaret.regression import *
+
+df_all = pd.read_excel('C:/Users/user/Reg_extracted.xlsx')
+df_all = df_all.dropna()
+df_all = df_all.reset_index(drop=True)
+
+df_all = df_all.drop(['Time', 'Result', 'CZM', 'Test'], axis=1)
+first_col = df_all.columns[0]
+df_all = df_all[df_all.columns[1:].tolist() + [first_col]]
+
+setup = setup(data=df_all, target='TRVmax[kV]', session_id=0, train_size=0.9)
+best_model = compare_models()
+evaluate_model(best_model)
+```
+
+반드시 유지할 핵심 정의:
+
+- regression target: `TRVmax[kV]`.
+- regression에서 feature로 쓰면 안 되는 column: `Time`, `Result`, `CZM`, `Test`, `TRVmax[kV]`.
+- notebook에서는 `TRVmax[kV]`를 마지막 column으로 옮긴 뒤 target으로 사용한다. 구현에서는 column 순서를 schema로 명확히 관리하면 된다.
+- notebook의 절대경로는 사용하지 않는다.
+
+---
+
+## 2. 최종 목표
+
+다음 기능을 갖는 Streamlit app과 Python source package를 구현한다.
+
+1. 사용자가 Streamlit GUI에서 `.xlsx` 또는 `.xls` Excel 파일을 업로드할 수 있다.
+2. 업로드된 Excel을 pandas로 읽고, 데이터 미리보기, shape, column 목록, 결측치 summary, target 분포를 보여준다.
+3. 업로드 데이터가 다음 중 무엇인지 자동 추정하고, 사용자가 수동으로 변경할 수 있다.
+   - `classification_training`
+   - `regression_training`
+   - `classification_prediction`
+   - `regression_prediction`
+   - `unknown`
+4. 사용자는 업로드된 training data로 classification/regression 모델을 학습하고 artifact를 저장할 수 있다.
+5. 사용자는 저장된 model artifact로 단건 또는 batch Excel prediction을 수행할 수 있다.
+6. batch prediction 결과를 화면에 보여주고 Excel/CSV로 다운로드할 수 있다.
+7. local LLM chat UI를 제공한다.
+8. LLM은 tool calling을 통해서만 데이터 요약, schema 검증, 학습, 예측, 결과 설명을 수행한다.
+9. LLM은 예측값을 임의 생성하거나 hallucination하면 안 된다. 예측은 반드시 deterministic ML tool 결과를 기반으로 한다.
+10. Streamlit UI는 저장된 model artifact를 로딩하여 inference를 수행한다. 앱 rerun마다 model training을 반복하지 않는다.
+
+---
+
+## 3. 기술 스택
+
+필수:
+
+- Python 3.10+
+- Streamlit
+- pandas
+- numpy
+- scikit-learn
+- joblib
+- openpyxl
+- requests
+- python-dotenv
+
+권장/선택:
+
+- shap: 가능하면 local/global explanation에 사용. 설치되지 않았거나 실패하면 fallback 사용.
+- imbalanced-learn: classification에서 BorderlineSMOTE 옵션 제공. 설치되지 않았으면 해당 옵션을 비활성화하고 명확히 표시.
+- PyCaret: 기존 notebook parity용 선택 dependency. 단, Streamlit runtime이 PyCaret에 강하게 의존하면 안 된다.
+
+원칙:
+
+- MVP serving은 가벼운 scikit-learn/joblib artifact 기반으로 동작해야 한다.
+- 기존 notebook의 PyCaret `compare_models()`는 참고용이며, production Streamlit app 안에서 직접 실행하지 않는다.
+- PyCaret trainer를 추가하고 싶다면 `src/hd_serving/pycaret_train.py`처럼 별도 optional module로 둔다.
+
+---
+
+## 4. Local LLM serving 구조
+
+기본 provider는 Ollama로 한다.
+
+환경변수:
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+LLM_TIMEOUT_SECONDS=60
+```
+
+요구사항:
+
+- `src/hd_serving/llm_client.py`에 provider adapter를 만든다.
+- 기본 adapter는 Ollama `/api/chat`을 사용한다.
+- Ollama tool calling을 지원하는 모델이면 `tools` parameter를 사용하여 function/tool calling을 수행한다.
+- tool calling 미지원 모델이거나 tool call parse에 실패하면, 안전한 fallback router를 사용한다. fallback은 명시적 키워드 기반으로만 동작하고 예측값을 임의 생성하지 않는다.
+- 향후 vLLM/OpenAI-compatible endpoint로 교체할 수 있도록 `openai_compatible` adapter skeleton을 둔다.
+
+LLM의 역할:
+
+- 프로젝트/코드/데이터/모델 설명.
+- 사용자의 자연어 요청을 tool call로 변환.
+- tool 결과를 읽고 설계자 친화적인 한국어 설명을 생성.
+- 누락 column, schema mismatch, model artifact 없음 같은 문제를 명확히 사용자에게 설명.
+
+LLM 금지사항:
+
+- 업로드된 Excel 전체를 prompt에 그대로 넣지 않는다.
+- 예측값, 확률, metric, SHAP 값을 임의로 말하지 않는다.
+- schema에 없는 feature를 상상해서 채우지 않는다.
+- 누락 feature를 평균값 등으로 자동 대체하지 않는다. 단, 사용자가 명시적으로 결측치 처리 옵션을 선택한 경우에만 허용한다.
+- Python `eval`, shell command execution 등 위험한 tool을 제공하지 않는다.
+
+---
+
+## 5. Tool calling 설계
+
+`src/hd_serving/tools.py`에 LLM이 호출할 수 있는 deterministic tools를 구현한다. 각 tool은 JSON-serializable input/output을 갖고, 실패 시 structured error를 반환한다.
+
+필수 tools:
+
+1. `get_uploaded_data_summary(dataset_id: str | None = None) -> dict`
+   - active uploaded dataframe의 row/column 수, column list, missing summary, target 분포를 반환.
+   - dataframe 전체 원문을 반환하지 말고 sample preview는 최대 5행만 반환.
+
+2. `infer_uploaded_dataset_type(dataset_id: str | None = None) -> dict`
+   - column set 기반으로 데이터 유형을 추정.
+
+3. `validate_classification_schema(dataset_id: str | None = None, model_id: str = "latest") -> dict`
+   - 저장된 classification schema와 업로드 데이터 column을 비교.
+   - missing columns, extra columns, ignored columns를 반환.
+
+4. `validate_regression_schema(dataset_id: str | None = None, model_id: str = "latest") -> dict`
+   - 저장된 regression schema와 업로드 데이터 column을 비교.
+
+5. `train_classification_model(dataset_id: str | None = None, options: dict | None = None) -> dict`
+   - classification training pipeline 실행.
+   - artifact 저장 후 metrics/schema/model_card path를 반환.
+
+6. `train_regression_model(dataset_id: str | None = None, options: dict | None = None) -> dict`
+   - regression training pipeline 실행.
+
+7. `predict_classification_batch(dataset_id: str | None = None, model_id: str = "latest") -> dict`
+   - batch prediction 수행.
+   - 결과 dataframe은 session registry에 저장하고, summary와 result_id를 반환.
+   - classification output: `prediction`, `prediction_label`, `probability_success`, `probability_failure`.
+
+8. `predict_regression_batch(dataset_id: str | None = None, model_id: str = "latest") -> dict`
+   - regression batch prediction 수행.
+   - output: `predicted_TRVmax[kV]`.
+
+9. `explain_model_or_prediction(task: str, model_id: str = "latest", dataset_id: str | None = None, row_index: int | None = None) -> dict`
+   - SHAP 사용 가능 시 SHAP summary/local explanation.
+   - 실패 시 built-in feature_importances_, coef_, permutation importance 순서로 fallback.
+
+10. `get_model_metrics(task: str, model_id: str = "latest") -> dict`
+    - `metrics.json`, `model_card.md` 기반 summary 반환.
+
+11. `get_prediction_result_summary(result_id: str) -> dict`
+    - batch prediction 결과 요약 반환.
+
+도구 출력은 LLM이 그대로 읽을 수 있게 한국어 label과 machine-readable key를 함께 둔다.
+
+---
+
+## 6. Streamlit GUI 요구사항
+
+`app.py`는 MVP 기준 단일 앱으로 구현하되, tabs를 사용한다. 이후 pages로 분리 가능하게 source logic은 `src/hd_serving/`에 둔다.
+
+### 6.1 전체 레이아웃
+
+앱 title:
+
+```text
+HD현대일렉트릭 Local LLM 기반 ML Serving
+```
+
+tabs:
+
+1. `Excel 업로드`
+2. `데이터 검증`
+3. `모델 학습`
+4. `모델 예측`
+5. `LLM 챗`
+6. `모델 관리`
+
+sidebar:
+
+- active dataset 선택
+- task 선택: classification / regression
+- model artifact 선택: latest 또는 특정 timestamp
+- LLM provider/model 설정 표시
+- Ollama 연결 상태 확인 버튼
+
+### 6.2 Excel 업로드 tab
+
+필수 구현:
+
+```python
+st.file_uploader("엑셀 파일을 업로드하세요", type=["xlsx", "xls"])
+```
+
+- 업로드 성공 시 pandas로 읽는다.
+- `st.session_state` 또는 session-level registry에 dataframe 저장.
+- dataset_id를 발급한다.
+- 원본 파일명, 업로드 시간, shape, columns를 표시한다.
+- `st.dataframe(df.head(50))`로 preview 제공.
+- 여러 파일 업로드는 MVP에서는 optional이다. 구현한다면 active dataset 선택 기능을 제공한다.
+
+### 6.3 데이터 검증 tab
+
+- 자동 판별된 dataset type 표시.
+- 사용자가 dataset type을 manual override 가능.
+- 결측치 summary 표시.
+- target column이 있으면 target 분포 표시.
+- classification training data인 경우 `Result` 분포와 변환 후 `label` 분포를 표시.
+- regression training data인 경우 `TRVmax[kV]` 분포와 기본 통계를 표시.
+- 저장된 schema와 비교하여 missing/extra/ignored columns를 보여준다.
+
+### 6.4 모델 학습 tab
+
+- task 선택: classification / regression.
+- active uploaded dataset으로 학습.
+- train/test split ratio 기본값: 0.9 train, 0.1 holdout.
+- random_state/session_id 기본값: 0.
+- classification metric: accuracy, roc_auc, precision, recall, f1, confusion_matrix.
+- regression metric: r2, mae, rmse.
+- classification 후보 모델 예시:
+  - GradientBoostingClassifier
+  - RandomForestClassifier
+  - ExtraTreesClassifier
+  - LogisticRegression
+  - SVC(probability=True)
+- regression 후보 모델 예시:
+  - RandomForestRegressor
+  - ExtraTreesRegressor
+  - GradientBoostingRegressor
+  - Ridge
+  - SVR
+- best model 선택 기준:
+  - classification: 기본 `accuracy`, 단 AUC 계산 가능하면 함께 기록.
+  - regression: 기본 `r2`.
+- PPT의 기존 성능값은 하드코딩하지 않는다. 현재 업로드된 데이터로 다시 계산한 값을 저장한다.
+- 학습 완료 시 artifact 저장:
+
+```text
+models/
+  classification/
+    latest/
+      model.joblib
+      schema.json
+      metrics.json
+      model_card.md
+    YYYYMMDD_HHMMSS/
+      model.joblib
+      schema.json
+      metrics.json
+      model_card.md
+  regression/
+    latest/
+      model.joblib
+      schema.json
+      metrics.json
+      model_card.md
+    YYYYMMDD_HHMMSS/
+      model.joblib
+      schema.json
+      metrics.json
+      model_card.md
+```
+
+- `latest`는 copy 또는 symlink로 관리한다. Windows compatibility를 위해 symlink가 실패하면 directory copy를 사용한다.
+
+### 6.5 모델 예측 tab
+
+- task 선택: classification / regression.
+- 저장된 model artifact 로딩.
+- active uploaded dataset으로 batch prediction 수행.
+- single-row prediction 지원:
+  - sample row index를 선택해서 입력값 자동 채우기.
+  - 필요 시 feature form으로 직접 입력 가능.
+- batch prediction 결과를 dataframe으로 표시.
+- 결과 다운로드:
+  - CSV
+  - XLSX
+- schema mismatch가 있으면 예측 버튼을 비활성화하고 missing columns를 표시한다.
+
+### 6.6 LLM 챗 tab
+
+- `st.chat_message`, `st.chat_input` 사용.
+- LLM에게 전달하는 context는 다음 정도로 제한한다.
+  - active dataset_id
+  - active filename
+  - inferred dataset type
+  - shape
+  - column list
+  - selected task
+  - selected model_id
+  - available tools 목록
+- dataframe 전체를 prompt에 넣지 않는다.
+- 사용자가 다음처럼 요청하면 tool calling을 수행한다.
+  - "방금 올린 엑셀 요약해줘"
+  - "이 데이터가 분류용인지 회귀용인지 봐줘"
+  - "저장된 분류 모델로 예측해줘"
+  - "회귀 모델 학습해줘"
+  - "예측 결과를 설명해줘"
+- 답변은 한국어로 한다.
+- tool error가 있으면 에러를 숨기지 말고 사용자가 이해할 수 있게 설명한다.
+
+### 6.7 모델 관리 tab
+
+- 저장된 artifacts 목록 표시.
+- 각 model의 metrics, schema, model_card 표시.
+- model artifact 삭제 기능은 MVP에서는 optional. 구현한다면 안전 확인 UI를 둔다.
+
+---
+
+## 7. 데이터 판별 로직
+
+`src/hd_serving/schema.py` 또는 `preprocessing.py`에 구현한다.
+
+```python
+def infer_dataset_type(columns: list[str]) -> str:
+    colset = set(columns)
+    has_result = "Result" in colset
+    has_trv = "TRVmax[kV]" in colset
+    has_reg_meta = {"Time", "CZM", "Test"}.issubset(colset)
+
+    if has_result and has_trv and has_reg_meta:
+        return "regression_training"
+    if has_result and has_trv:
+        return "classification_training"
+    return "prediction_input_or_unknown"
+```
+
+추론 후 사용자가 manual override할 수 있어야 한다.
+
+---
+
+## 8. Preprocessing 세부사항
+
+### 8.1 Classification preprocessing
+
+```python
+def prepare_classification_training_df(df):
+    original_rows = len(df)
+    df = df.dropna().reset_index(drop=True)
+    dropped_rows = original_rows - len(df)
+
+    y = np.where(df["Result"] == 1.0, 1, 0)
+    X = df.drop(columns=["Result", "TRVmax[kV]"], errors="raise")
+    return X, y, {"dropped_rows": dropped_rows}
+```
+
+주의:
+
+- `label`을 feature에 포함시키면 안 된다.
+- `Result`, `TRVmax[kV]`는 classification feature에 포함시키면 안 된다.
+- `errors="raise"`로 필수 column 누락을 조기에 잡는다.
+
+### 8.2 Regression preprocessing
+
+```python
+def prepare_regression_training_df(df):
+    original_rows = len(df)
+    df = df.dropna().reset_index(drop=True)
+    dropped_rows = original_rows - len(df)
+
+    y = df["TRVmax[kV]"]
+    X = df.drop(columns=["Time", "Result", "CZM", "Test", "TRVmax[kV]"], errors="raise")
+    return X, y, {"dropped_rows": dropped_rows}
+```
+
+주의:
+
+- `TRVmax[kV]`는 target이며 feature에 포함시키면 안 된다.
+- `Time`, `Result`, `CZM`, `Test`는 regression feature에 포함시키면 안 된다.
+
+### 8.3 Prediction preprocessing
+
+- 저장된 `schema.json`의 `features` 목록을 기준으로 column을 정렬한다.
+- 업로드 dataframe에 target/ignored columns가 있으면 prediction 시에는 무시할 수 있다. 단, ignored columns 목록을 사용자에게 보여준다.
+- missing feature가 있으면 예측하지 않는다.
+- extra columns는 무시 가능하지만, 무시된 column 목록을 결과에 포함한다.
+
+---
+
+## 9. Schema artifact 형식
+
+`schema.json` 예시:
+
+```json
+{
+  "task": "classification",
+  "target": "label",
+  "source_target_column": "Result",
+  "positive_class_rule": "Result == 1.0 -> 1 else 0",
+  "features": ["Gas type", "Gas_P[bar.g]", "Tarc[ms]"],
+  "ignored_columns": ["Result", "TRVmax[kV]"],
+  "dropna": true,
+  "created_at": "2026-05-12T00:00:00+09:00",
+  "random_state": 0,
+  "train_size": 0.9,
+  "model_name": "GradientBoostingClassifier"
+}
+```
+
+Regression 예시:
+
+```json
+{
+  "task": "regression",
+  "target": "TRVmax[kV]",
+  "features": ["Gas type", "Gas_P[bar.g]", "Tarc[ms]"],
+  "ignored_columns": ["Time", "Result", "CZM", "Test", "TRVmax[kV]"],
+  "dropna": true,
+  "created_at": "2026-05-12T00:00:00+09:00",
+  "random_state": 0,
+  "train_size": 0.9,
+  "model_name": "RandomForestRegressor"
+}
+```
+
+---
+
+## 10. Metrics/model card
+
+`metrics.json`에는 다음을 포함한다.
+
+Classification:
+
+```json
+{
+  "task": "classification",
+  "best_model": "GradientBoostingClassifier",
+  "selection_metric": "accuracy",
+  "holdout": {
+    "accuracy": 0.0,
+    "roc_auc": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "confusion_matrix": [[0, 0], [0, 0]]
+  },
+  "cv": {},
+  "n_train": 0,
+  "n_test": 0,
+  "class_distribution": {"0": 0, "1": 0},
+  "dropped_rows": 0
+}
+```
+
+Regression:
+
+```json
+{
+  "task": "regression",
+  "best_model": "RandomForestRegressor",
+  "selection_metric": "r2",
+  "holdout": {
+    "r2": 0.0,
+    "mae": 0.0,
+    "rmse": 0.0
+  },
+  "cv": {},
+  "n_train": 0,
+  "n_test": 0,
+  "target_summary": {},
+  "dropped_rows": 0
+}
+```
+
+`model_card.md`에는 다음을 한국어로 작성한다.
+
+- 모델 목적
+- 사용 데이터 파일명
+- preprocessing 요약
+- feature 수
+- target 정의
+- 성능 metric
+- 제한사항
+- LLM이 예측을 임의 생성하지 않고 model artifact 기반 tool 결과만 설명한다는 점
+
+---
+
+## 11. Explanation 요구사항
+
+`src/hd_serving/explanation.py` 구현.
+
+우선순위:
+
+1. SHAP 사용 가능하면 SHAP 계산.
+2. 모델에 `feature_importances_`가 있으면 이를 사용.
+3. 선형 모델에 `coef_`가 있으면 이를 사용.
+4. 위 모두 불가능하면 permutation importance 사용.
+5. permutation importance도 실패하면 explanation unavailable error를 반환.
+
+결과는 다음 구조로 반환한다.
+
+```json
+{
+  "task": "classification",
+  "method": "feature_importances_",
+  "top_features": [
+    {"feature": "MN_L1", "importance": 0.18},
+    {"feature": "MN_S2", "importance": 0.05}
+  ],
+  "notes": "SHAP unavailable; used model.feature_importances_ fallback."
+}
+```
+
+중요:
+
+- explanation 값도 임의 생성하지 않는다.
+- SHAP 계산 실패는 정상적인 fallback 대상이다.
+
+---
+
+## 12. 프로젝트 구조
+
+다음 구조로 구현한다.
+
+```text
+serving_program/
+  README.md
+  pyproject.toml
+  .env.example
+  app.py
+
+  data/
+    raw/
+      class_extracted.xlsx
+      Reg_extracted.xlsx
+    uploads/
+    processed/
+
+  notebooks/
+    HD_LLM.ipynb
+
+  models/
+    classification/
+    regression/
+
+  docs/
+    project_summary.md
+    source_notes.md
+
+  src/
+    hd_serving/
+      __init__.py
+      config.py
+      constants.py
+      data_registry.py
+      data_loader.py
+      preprocessing.py
+      schema.py
+      training.py
+      train_classification.py
+      train_regression.py
+      inference.py
+      explanation.py
+      artifacts.py
+      llm_client.py
+      tools.py
+      orchestrator.py
+      rag.py
+      prompts.py
+      ui_components.py
+
+  tests/
+    test_preprocessing.py
+    test_schema.py
+    test_training_smoke.py
+    test_inference.py
+    test_tools.py
+```
+
+Notes:
+
+- `app.py`는 UI orchestration만 담당한다.
+- 학습/추론/검증/LLM/tool logic은 `src/hd_serving/`에 둔다.
+- notebook은 참고 자료로 유지하되, runtime dependency로 사용하지 않는다.
+
+---
+
+## 13. RAG/프로젝트 문서 Q&A
+
+MVP에서는 lightweight retrieval로 충분하다.
+
+- `docs/project_summary.md`: PPT와 notebook 내용을 사람이 읽을 수 있게 요약한 문서.
+- `docs/source_notes.md`: notebook에서 추출한 preprocessing/modeling logic 기록.
+- `models/**/model_card.md`, `schema.json`, `metrics.json`을 retrieval 대상으로 삼는다.
+- `rag.py`는 sklearn TF-IDF 기반 chunk retrieval로 구현해도 된다.
+- Excel row 전체를 RAG 문서로 넣지 않는다.
+- 데이터 관련 질문은 RAG가 아니라 tools가 처리한다.
+
+---
+
+## 14. README 요구사항
+
+README에는 다음을 반드시 포함한다.
+
+1. 프로젝트 개요.
+2. 파일 역할.
+3. 설치 방법.
+4. `.env` 설정 방법.
+5. Ollama 실행 예시.
+6. 모델 학습 CLI 예시.
+7. Streamlit 실행 예시.
+8. Excel 업로드 → 데이터 검증 → 모델 학습 → 예측 → LLM 챗 사용 흐름.
+9. schema mismatch가 발생했을 때의 처리 방식.
+10. LLM이 예측값을 임의 생성하지 않고 tool result만 설명한다는 안전 원칙.
+
+예시 실행:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -e .
+cp .env.example .env
+
+python -m hd_serving.train_classification --input data/raw/class_extracted.xlsx
+python -m hd_serving.train_regression --input data/raw/Reg_extracted.xlsx
+
+streamlit run app.py
+```
+
+Ollama 예시:
+
+```bash
+ollama serve
+ollama pull llama3.1:8b
+```
+
+---
+
+## 15. CLI 요구사항
+
+다음 CLI를 구현한다.
+
+```bash
+python -m hd_serving.train_classification --input data/raw/class_extracted.xlsx --output models/classification
+python -m hd_serving.train_regression --input data/raw/Reg_extracted.xlsx --output models/regression
+python -m hd_serving.inference --task classification --model models/classification/latest --input some_prediction.xlsx --output predictions.xlsx
+python -m hd_serving.inference --task regression --model models/regression/latest --input some_prediction.xlsx --output predictions.xlsx
+```
+
+CLI는 Streamlit 없이도 동작해야 한다.
+
+---
+
+## 16. Tests 요구사항
+
+pytest tests를 작성한다.
+
+필수 테스트:
+
+1. classification preprocessing:
+   - `Result == 1.0`만 label 1이 되는지 확인.
+   - `Result`, `TRVmax[kV]`가 feature에서 제거되는지 확인.
+
+2. regression preprocessing:
+   - `TRVmax[kV]`가 target인지 확인.
+   - `Time`, `Result`, `CZM`, `Test`, `TRVmax[kV]`가 feature에서 제거되는지 확인.
+
+3. schema validation:
+   - missing column 검출.
+   - extra column 검출.
+   - column order를 schema order로 정렬.
+
+4. training smoke:
+   - 작은 synthetic dataframe으로 모델 artifact 생성 가능.
+
+5. inference:
+   - 저장된 model artifact를 로드하여 batch prediction 가능.
+
+6. tools:
+   - LLM tools가 dataframe 전체를 반환하지 않는지 확인.
+   - predict tool이 schema mismatch 시 예측하지 않는지 확인.
+
+---
+
+## 17. UI/UX 세부 기준
+
+- 한국어 UI를 사용한다.
+- 에러 메시지는 사용자 친화적으로 작성한다.
+- 모델 학습 중에는 `st.spinner` 또는 progress 표시를 사용한다.
+- `st.cache_resource`를 사용하여 model artifact와 LLM client를 캐싱한다.
+- dataframe은 `st.dataframe`으로 표시한다.
+- metric은 `st.metric` 또는 간단한 table로 표시한다.
+- batch prediction 결과에는 원본 row와 prediction columns를 함께 둔다.
+
+---
+
+## 18. 보안/안전 기준
+
+- 사용자가 업로드한 Excel 파일을 코드로 실행하지 않는다.
+- LLM output을 Python 코드로 실행하지 않는다.
+- Shell command를 LLM tool로 제공하지 않는다.
+- API key가 필요한 경우 `.env`로만 읽고 코드에 하드코딩하지 않는다.
+- 로컬 LLM이 실패하면 cloud fallback을 자동 사용하지 않는다.
+- 사용자의 업로드 데이터를 외부 API로 전송하지 않는다.
+
+---
+
+## 19. 구현 시 주의할 불일치 가능성
+
+PPT에 기록된 과거 성능값과 현재 업로드 Excel/notebook output이 다를 수 있다. 따라서 다음 원칙을 지킨다.
+
+- PPT 성능값을 app에 하드코딩하지 않는다.
+- 현재 업로드된 Excel과 현재 학습 pipeline으로 계산한 metric을 `metrics.json`에 저장한다.
+- UI에서는 저장된 `metrics.json` 값을 보여준다.
+- README에는 “데이터 버전과 preprocessing에 따라 성능이 달라질 수 있다”고 명시한다.
+
+---
+
+## 20. Codex 작업 순서
+
+다음 순서로 구현한다.
+
+1. 저장소 구조 생성.
+2. `pyproject.toml`, `.env.example`, README skeleton 생성.
+3. `preprocessing.py`, `schema.py`, `artifacts.py` 구현.
+4. training/inference module 구현.
+5. CLI 구현.
+6. Streamlit `app.py` 구현.
+7. `tools.py`, `llm_client.py`, `orchestrator.py` 구현.
+8. lightweight `rag.py`와 docs 생성.
+9. tests 작성.
+10. smoke test 실행.
+11. README 완성.
+
+---
+
+## 21. 완료 기준
+
+작업 완료 후 다음이 가능해야 한다.
+
+```bash
+pip install -e .
+pytest
+python -m hd_serving.train_classification --input data/raw/class_extracted.xlsx
+python -m hd_serving.train_regression --input data/raw/Reg_extracted.xlsx
+streamlit run app.py
+```
+
+Streamlit에서 다음이 가능해야 한다.
+
+1. Excel upload.
+2. 데이터 요약 확인.
+3. classification/regression 학습.
+4. 저장된 모델로 batch prediction.
+5. prediction result 다운로드.
+6. LLM chat에서 "방금 올린 엑셀로 예측해줘"라고 요청하면 tool calling으로 예측 수행.
+7. LLM chat에서 "예측 결과 설명해줘"라고 요청하면 tool result와 explanation result 기반으로 한국어 설명 제공.
+
+---
+
+## 22. 가장 중요한 원칙
+
+이 프로젝트의 핵심은 “LLM이 예측 모델처럼 말하는 것”이 아니라, “LLM이 deterministic ML tools를 호출하고 그 결과를 설명하는 것”이다.
+
+따라서 다음 원칙을 절대 어기지 않는다.
+
+- ML 예측은 ML artifact가 한다.
+- LLM은 tool call orchestration과 설명을 담당한다.
+- Excel 데이터는 Streamlit upload/session registry로 관리한다.
+- schema 검증 없이 prediction하지 않는다.
+- app runtime에서 notebook을 직접 실행하지 않는다.
+- 성능값을 하드코딩하지 않는다.
+- 절대경로를 사용하지 않는다.
+
+---
+
+## 23. 참고 공식 문서
+
+구현 중 API 사용법이 필요하면 아래 공식 문서를 우선 참고한다.
+
+- Streamlit `st.file_uploader`: https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader
+- Streamlit `st.chat_input`: https://docs.streamlit.io/develop/api-reference/chat/st.chat_input
+- Streamlit `st.cache_resource`: https://docs.streamlit.io/develop/api-reference/caching-and-state/st.cache_resource
+- Ollama `/api/chat`: https://docs.ollama.com/api/chat
+- Ollama tool calling: https://docs.ollama.com/capabilities/tool-calling
+
