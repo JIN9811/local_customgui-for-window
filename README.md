@@ -13,6 +13,18 @@
 - Ollama 또는 vLLM 로컬 LLM을 연결해 한국어로 작업을 요청하고 결과를 설명받습니다.
 - Windows 매니저 EXE 하나로 설치, 서버 실행, 삭제를 처리합니다.
 
+## 기능 분석 요약
+
+| 영역 | 기능 | 확인한 동작 |
+| --- | --- | --- |
+| Runtime | Ollama/vLLM 설정, 모델 선택, Context Length, Health | Ollama endpoint와 모델 목록을 확인하고 `ollama OK` 상태를 표시합니다. |
+| 데이터 업로드 | 학습용 Excel 업로드, 활성 dataset 관리 | `serving/class_extracted.xlsx` 기준 학습 dataset 등록/Apply/Delete 목록을 확인했습니다. |
+| 모델 관리 | 저장 모델 목록, 선택 모델 상세, schema/metric 확인 | classification 저장 모델 목록과 선택 모델 metric/schema 상세가 표시됩니다. |
+| 예측 입력 | 저장 모델 기반 Excel batch 예측, 1-row 직접 입력 | `분류 예측` 요청으로 예측 입력 패널이 열리고 schema 기반 입력 변수가 표시됩니다. |
+| 성능 비교 | 저장 모델 비교, 자동 후보 모델 비교, raw payload 보기 | `성능비교` 요청으로 비교표와 `원본 결과 보기 / 닫기` 토글이 생성됩니다. |
+| 리포트 | PDF/Markdown 분석 자료 생성 | `리포트 생성` 요청 후 다운로드 버튼과 저장 경로가 표시됩니다. |
+| 채팅 정리 | Chat Clear, Clear now 확인 | 현재 채팅과 예측 결과 표시를 확인 후 삭제하고 기본 안내 상태로 돌아갑니다. |
+
 ## 전체 흐름
 
 1. `LocalCustomGUI-Manager.exe`를 실행합니다.
@@ -58,7 +70,7 @@
 
 브라우저 왼쪽 `Runtime` 영역에서 로컬 LLM 서버를 관리합니다.
 
-![Streamlit runtime screen](docs/assets/screenshots/streamlit-home.png)
+![Streamlit runtime screen](docs/assets/screenshots/streamlit-runtime-controls.png)
 
 주요 설정:
 
@@ -67,8 +79,8 @@
 - `Model`: 사용할 로컬 모델을 선택합니다.
 - `Context Length`: 기본값은 `16384`입니다.
 - `Loading` / `Unloading`: Ollama 모델 로딩 상태를 확인하거나 정리합니다.
-- `Health`: LLM endpoint와 모델 목록 연결 상태를 확인합니다.
-- `Save Config`: 현재 설정을 `config.json`에 저장합니다.
+- `Save LLM`: 현재 LLM 설정을 `config.json`에 저장합니다.
+- `Health`: LLM endpoint와 모델 목록 연결 상태를 확인하고 `ollama OK`처럼 상태를 표시합니다.
 
 LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측, 모델 관리 기능은 계속 사용할 수 있습니다.
 
@@ -76,7 +88,7 @@ LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측,
 
 ### Excel 업로드
 
-상단의 `학습용 Excel 데이터셋 업로드 / 관리`를 펼치고 `Upload` 버튼으로 `.xlsx` 또는 `.xls` 파일을 선택합니다.
+상단의 `학습용 Excel 데이터셋 업로드 / 관리`를 펼치고 `Upload` 버튼으로 `.xlsx` 또는 `.xls` 파일을 선택합니다. 테스트용 파일은 `serving/class_extracted.xlsx` 또는 `serving/Reg_extracted.xlsx`를 쓰면 됩니다.
 
 ![Dataset upload screen](docs/assets/screenshots/streamlit-upload.png)
 
@@ -86,11 +98,56 @@ LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측,
 2. 데이터 타입이 자동 판별되지 않으면 classification 또는 regression을 선택합니다.
 3. `현재 학습용 dataset workflow 다시 실행` 또는 채팅 입력창을 통해 학습/예측 흐름을 실행합니다.
 
-### 모델 학습과 결과 확인
+### 학습 데이터셋 관리
+
+`Training Dataset Management`를 열면 등록된 학습 데이터셋 목록을 볼 수 있습니다.
+
+![Training dataset management screen](docs/assets/screenshots/streamlit-dataset-management.png)
+
+관리 기능:
+
+1. `Active training dataset`에서 현재 학습 대상 파일을 확인합니다.
+2. `Apply`로 이후 채팅/학습 요청에 사용할 dataset을 바꿉니다.
+3. `X`로 세션/저장 상태에서 해당 dataset을 제거합니다.
+4. 상세 패널에서 활성 dataset의 컬럼, shape, 판별 타입을 확인합니다.
+
+### 모델 관리
+
+`Model Management`를 열면 저장된 모델 목록과 선택 모델 상세를 볼 수 있습니다.
+
+![Model management screen](docs/assets/screenshots/streamlit-model-management.png)
+
+관리 기능:
+
+1. `classification` 또는 `regression` task를 선택합니다.
+2. `Apply`로 이후 예측/성능비교에 사용할 모델을 지정합니다.
+3. `X`로 선택한 저장 모델을 삭제합니다. `latest` alias는 삭제 대상이 아닙니다.
+4. `Selected model detail`에서 metric과 schema를 펼쳐 확인합니다.
+
+![Selected model detail screen](docs/assets/screenshots/streamlit-prediction-controls.png)
+
+### 예측 입력
+
+하단 채팅 입력창에 `분류 예측` 또는 `회귀 예측`처럼 입력하면 `예측 입력` 패널이 열립니다.
+
+![Prediction input screen](docs/assets/screenshots/streamlit-prediction-input.png)
+
+예측 방식:
+
+1. `Prediction Task`에서 classification 또는 regression을 선택합니다.
+2. `Model Artifact`에서 사용할 저장 모델을 선택합니다.
+3. `예측용 Excel 업로드`에 `serving/class_extracted.xlsx` 또는 `serving/Reg_extracted.xlsx` 같은 파일을 넣어 batch 예측을 실행합니다.
+4. Excel 대신 한 행만 확인하려면 `직접 입력`을 펼칩니다.
+
+`직접 입력`은 저장 모델 schema의 입력 변수 수만큼 숫자 입력칸을 자동으로 만듭니다. 기본값은 활성 학습 dataset의 중앙값을 기준으로 채워집니다.
+
+![Direct input screen](docs/assets/screenshots/streamlit-direct-input.png)
+
+### 성능 비교와 세부 결과 확인
 
 학습이 끝나면 저장 모델 비교표와 자동 후보 모델 비교표가 표시됩니다.
 
-![Model results screen](docs/assets/screenshots/streamlit-results.png)
+![Model diagnostics screen](docs/assets/screenshots/streamlit-diagnostics.png)
 
 확인할 항목:
 
@@ -98,7 +155,23 @@ LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측,
 2. classification은 Accuracy, AUC, F1 등 주요 지표를 확인합니다.
 3. regression은 R2, RMSE 등 주요 지표를 확인합니다.
 4. 필요한 모델을 선택해 이후 예측에 사용합니다.
-5. 결과 리포트가 생성되면 PDF 또는 Markdown으로 다운로드합니다.
+5. 후보 모델 비교표에서 현재 모델과 대안 모델의 성능 차이를 확인합니다.
+
+세부 JSON 결과가 필요하면 `원본 결과 보기 / 닫기` 토글을 켭니다.
+
+![Raw result screen](docs/assets/screenshots/streamlit-raw-result.png)
+
+### 리포트 다운로드
+
+채팅 입력창에 `리포트 생성`을 입력하면 선택된 모델 기준으로 성능 분석 자료를 만듭니다.
+
+![Report download screen](docs/assets/screenshots/streamlit-report-download.png)
+
+다운로드 기능:
+
+1. `PDF 다운로드`로 공유용 리포트 파일을 받습니다.
+2. `Markdown 다운로드`로 편집 가능한 문서 원문을 받습니다.
+3. 다운로드 버튼 아래 저장 경로에서 생성된 파일 위치를 확인합니다.
 
 ### 채팅으로 요청하기
 
@@ -115,6 +188,21 @@ LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측,
 ```
 
 LLM은 요청을 해석해 데이터 요약, 학습, 예측, 성능 비교, 리포트 생성 도구를 호출합니다. 실제 예측은 저장된 모델 artifact가 수행합니다.
+
+### Chat Clear
+
+오른쪽 아래 `Chat Clear`는 현재 채팅 내용과 예측 결과 표시를 정리합니다. 학습 dataset과 저장 모델 파일을 삭제하는 기능은 아닙니다.
+
+![Chat clear confirmation screen](docs/assets/screenshots/streamlit-chat-clear-confirm.png)
+
+정리 단계:
+
+1. `Chat Clear`를 누릅니다.
+2. 확인 경고가 뜨면 `Clear now`를 누릅니다.
+3. 취소하려면 `Cancel`을 누릅니다.
+4. 정리 후 기본 `분석 안내` 화면으로 돌아갑니다.
+
+![Chat clear after screen](docs/assets/screenshots/streamlit-chat-clear-after.png)
 
 ## 5. 삭제
 
