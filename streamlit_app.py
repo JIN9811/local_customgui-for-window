@@ -447,24 +447,24 @@ def render_css() -> None:
         <style>
         :root {
           color-scheme: dark light;
-          --hd-ui-text: #e5e7eb;
-          --hd-ui-muted: #cbd5e1;
-          --hd-ui-subtle: #aeb4bd;
+          --hd-ui-text: #f8fafc;
+          --hd-ui-muted: #e2e8f0;
+          --hd-ui-subtle: #cbd5e1;
           --hd-ui-panel: #0f172a;
           --hd-ui-panel-soft: #111827;
           --hd-ui-border: rgba(226, 232, 240, .18);
           --hd-ui-table-head: rgba(226, 232, 240, .08);
           --hd-ui-code-bg: rgba(226, 232, 240, .08);
-          --hd-ui-code-text: #f8fafc;
-          --hd-upload-text: #e5e7eb;
+          --hd-ui-code-text: #ffffff;
+          --hd-upload-text: #f8fafc;
           --hd-info-bg: rgba(56, 189, 248, .10);
           --hd-info-border: rgba(56, 189, 248, .28);
-          --hd-reasoning-text: #aeb4bd;
+          --hd-reasoning-text: #dbeafe;
           --hd-reasoning-bg: rgba(226, 232, 240, .06);
           --hd-reasoning-border: rgba(148, 163, 184, .22);
-          --hd-reasoning-spinner: rgba(203, 213, 225, .55);
+          --hd-reasoning-spinner: rgba(219, 234, 254, .70);
           --hd-avatar-bg: #0f2a44;
-          --hd-icon-color: #e5e7eb;
+          --hd-icon-color: #f8fafc;
         }
         @media (prefers-color-scheme: light) {
           :root {
@@ -511,24 +511,24 @@ def render_css() -> None:
         }
         [data-theme="dark"],
         [data-baseweb-theme="dark"] {
-          --hd-ui-text: #e5e7eb;
-          --hd-ui-muted: #cbd5e1;
-          --hd-ui-subtle: #aeb4bd;
+          --hd-ui-text: #f8fafc;
+          --hd-ui-muted: #e2e8f0;
+          --hd-ui-subtle: #cbd5e1;
           --hd-ui-panel: #0f172a;
           --hd-ui-panel-soft: #111827;
           --hd-ui-border: rgba(226, 232, 240, .18);
           --hd-ui-table-head: rgba(226, 232, 240, .08);
           --hd-ui-code-bg: rgba(226, 232, 240, .08);
-          --hd-ui-code-text: #f8fafc;
-          --hd-upload-text: #e5e7eb;
+          --hd-ui-code-text: #ffffff;
+          --hd-upload-text: #f8fafc;
           --hd-info-bg: rgba(56, 189, 248, .10);
           --hd-info-border: rgba(56, 189, 248, .28);
-          --hd-reasoning-text: #aeb4bd;
+          --hd-reasoning-text: #dbeafe;
           --hd-reasoning-bg: rgba(226, 232, 240, .06);
           --hd-reasoning-border: rgba(148, 163, 184, .22);
-          --hd-reasoning-spinner: rgba(203, 213, 225, .55);
+          --hd-reasoning-spinner: rgba(219, 234, 254, .70);
           --hd-avatar-bg: #0f2a44;
-          --hd-icon-color: #e5e7eb;
+          --hd-icon-color: #f8fafc;
         }
         .stApp, [data-testid="stAppViewContainer"] { color: var(--hd-ui-text); }
         .block-container { max-width: 1320px; padding-top: 2.8rem; padding-bottom: 4rem; }

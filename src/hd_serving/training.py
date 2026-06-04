@@ -44,7 +44,7 @@ from .preprocessing import prepare_classification_training_df, prepare_regressio
 from .pycaret_bridge import train_pycaret_model
 
 
-DEFAULT_TRAIN_ENGINE = "sklearn"
+DEFAULT_TRAIN_ENGINE = "pycaret"
 
 
 def _safe_train_test_split(X: pd.DataFrame, y: Any, *, train_size: float, random_state: int, stratify: Any | None = None):

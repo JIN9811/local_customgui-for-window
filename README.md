@@ -84,6 +84,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Invoke-Checked $CondaExe run -n $EnvName python -m pip install -U pip
 Invoke-Checked $CondaExe run -n $EnvName python -m pip install -r requirements.txt
+Invoke-Checked $CondaExe run -n $EnvName python -m pip install -r requirements-pycaret.txt
 Invoke-Checked $CondaExe run -n $EnvName python -m pip install -e .
 
 if (-not (Test-Path ".\.env")) {
@@ -113,7 +114,7 @@ if ($OllamaExe) {
   Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM을 쓰려면 Ollama 설치와 모델 다운로드가 필요합니다."
 }
 
-$StreamlitConfigDir = ".\.streamlit"
+$StreamlitConfigDir = Join-Path $env:UserProfile ".streamlit"
 New-Item -ItemType Directory -Force -Path $StreamlitConfigDir | Out-Null
 @"
 [server]
@@ -122,28 +123,15 @@ showEmailPrompt = false
 
 [browser]
 gatherUsageStats = false
-
-[theme]
-base = "dark"
-primaryColor = "#2f6f9f"
-backgroundColor = "#0b1220"
-secondaryBackgroundColor = "#111827"
-textColor = "#e5e7eb"
-
-[theme.sidebar]
-backgroundColor = "#0f172a"
-secondaryBackgroundColor = "#111827"
-textColor = "#e5e7eb"
 "@ | Set-Content -LiteralPath (Join-Path $StreamlitConfigDir "config.toml") -Encoding UTF8
 
 $env:STREAMLIT_SERVER_HEADLESS = "true"
 $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
-$env:STREAMLIT_THEME_BASE = "dark"
 
 Write-Host ""
 Write-Host "설치 완료. Streamlit을 실행합니다: http://127.0.0.1:8791"
-Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false --theme.base dark
+Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
 ```
 
 다음부터는 설치 과정을 반복하지 않고 아래만 실행하면 된다.
@@ -152,8 +140,7 @@ Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.p
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
 $env:STREAMLIT_SERVER_HEADLESS = "true"
 $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
-$env:STREAMLIT_THEME_BASE = "dark"
-conda run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false --theme.base dark
+conda run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
 ```
 
 접속 주소:
@@ -162,14 +149,12 @@ conda run -n local_customgui_windows python -m streamlit run streamlit_app.py --
 http://127.0.0.1:8791
 ```
 
-## PyCaret 선택 설치
+## PyCaret 확인
 
-Notebook parity가 꼭 필요하면 Miniconda 환경에 PyCaret을 추가 설치한 뒤 학습 엔진을 `pycaret`으로 바꾼다.
+Windows 빠른 설치는 PyCaret을 같은 Miniconda 환경에 설치하고 기본 학습 엔진으로 사용한다. 설치 확인은 아래처럼 한다.
 
 ```powershell
-conda run -n local_customgui_windows python -m pip install -r requirements-pycaret.txt
-$env:HD_SERVING_TRAIN_ENGINE = "pycaret"
-[Environment]::SetEnvironmentVariable("HD_SERVING_TRAIN_ENGINE", "pycaret", "User")
+conda run -n local_customgui_windows python -c "import pycaret; print(pycaret.__version__)"
 ```
 
 ## Linux/macOS 설치

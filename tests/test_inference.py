@@ -7,7 +7,8 @@ from hd_serving.inference import predict_batch
 from hd_serving.training import train_classification_model
 
 
-def test_inference_batch_and_schema_mismatch(tmp_path):
+def test_inference_batch_and_schema_mismatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("HD_SERVING_TRAIN_ENGINE", "sklearn")
     df = pd.DataFrame(
         {
             "Result": [1.0, 0.8, 1.0, 0.8, 1.0, 0.8, 1.0, 0.8],

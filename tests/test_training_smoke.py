@@ -5,7 +5,8 @@ import pandas as pd
 from hd_serving.training import train_classification_model, train_regression_model
 
 
-def test_training_smoke(tmp_path):
+def test_training_smoke(tmp_path, monkeypatch):
+    monkeypatch.setenv("HD_SERVING_TRAIN_ENGINE", "sklearn")
     class_df = pd.DataFrame(
         {
             "Result": [1.0, 0.8, 1.0, 0.8, 1.0, 0.8, 1.0, 0.8],

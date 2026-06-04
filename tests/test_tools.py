@@ -7,7 +7,8 @@ from hd_serving.schema import infer_dataset_type
 from hd_serving.tools import ToolContext, get_uploaded_data_summary, predict_tool, train_tool
 
 
-def test_tools_do_not_return_full_dataframe_and_block_mismatch(tmp_path):
+def test_tools_do_not_return_full_dataframe_and_block_mismatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("HD_SERVING_TRAIN_ENGINE", "sklearn")
     df = pd.DataFrame(
         {
             "Result": [1.0, 0.8, 1.0, 0.8, 1.0, 0.8],
