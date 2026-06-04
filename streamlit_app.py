@@ -629,7 +629,7 @@ def scroll_to_chat_bottom() -> None:
 
 def backend_defaults(config: dict[str, Any], backend: str) -> dict[str, Any]:
     defaults = {
-        "ollama": {"base_url": "http://127.0.0.1:11434", "model": "llama3.1:8b"},
+        "ollama": {"base_url": "http://127.0.0.1:11434", "model": "gemma4:e2b"},
         "vllm": {
             "base_url": "http://127.0.0.1:8000/v1",
             "model": "local-model",

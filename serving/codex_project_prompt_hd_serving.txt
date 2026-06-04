@@ -144,7 +144,7 @@ evaluate_model(best_model)
 ```bash
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
+OLLAMA_MODEL=gemma4:e2b
 LLM_TIMEOUT_SECONDS=60
 ```
 
@@ -689,7 +689,7 @@ Ollama 예시:
 
 ```bash
 ollama serve
-ollama pull llama3.1:8b
+ollama pull gemma4:e2b
 ```
 
 ---
@@ -841,4 +841,3 @@ Streamlit에서 다음이 가능해야 한다.
 - Streamlit `st.cache_resource`: https://docs.streamlit.io/develop/api-reference/caching-and-state/st.cache_resource
 - Ollama `/api/chat`: https://docs.ollama.com/api/chat
 - Ollama tool calling: https://docs.ollama.com/capabilities/tool-calling
-

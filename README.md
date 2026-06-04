@@ -108,7 +108,7 @@ if ($OllamaExe) {
     Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 5
   }
-  Invoke-Checked $OllamaExe pull llama3.1:8b
+  Invoke-Checked $OllamaExe pull gemma4:e2b
 } else {
   Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM을 쓰려면 Ollama 설치와 모델 다운로드가 필요합니다."
 }
@@ -161,7 +161,7 @@ cp .env.example .env
 ```bash
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
+OLLAMA_MODEL=gemma4:e2b
 VLLM_BASE_URL=http://localhost:8000/v1
 VLLM_MODEL=local-model
 VLLM_API_KEY=EMPTY
@@ -171,7 +171,7 @@ Ollama 예시:
 
 ```bash
 ollama serve
-ollama pull llama3.1:8b
+ollama pull gemma4:e2b
 ```
 
 Docker Ollama를 쓰는 경우 컨테이너가 `11434:11434`로 노출되어 있으면 GUI의 Base URL은 그대로 `http://127.0.0.1:11434`를 사용한다. GUI에서 Base URL 아래 `Connect`를 누르면 현재 Ollama의 `/api/tags` 모델 목록을 읽어 `Model` 선택 목록에 표시한다.
@@ -186,7 +186,7 @@ http://127.0.0.1:8000/v1/models
 Windows에서 Ollama를 사용하려면 Ollama 앱을 실행한 뒤 모델을 받는다.
 
 ```powershell
-ollama pull llama3.1:8b
+ollama pull gemma4:e2b
 ```
 
 vLLM은 OpenAI-compatible endpoint가 필요하며, 기본 config는 일반 로컬 endpoint를 사용한다.

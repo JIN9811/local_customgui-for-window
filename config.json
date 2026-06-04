@@ -6,7 +6,7 @@
   "system_prompt": "You are a professional, user-friendly interface for high-voltage circuit breaker performance prediction. Answer in Korean unless the user asks otherwise.",
   "ollama": {
     "base_url": "http://127.0.0.1:11434",
-    "model": "llama3.1:8b"
+    "model": "gemma4:e2b"
   },
   "vllm": {
     "base_url": "http://127.0.0.1:8000/v1",
