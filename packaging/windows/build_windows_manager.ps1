@@ -52,7 +52,7 @@ $IconData = "$ProjectRoot\Icon\aim4lab_app_icon.png;Icon"
 $IconPath = "$ProjectRoot\Icon\aim4lab_app_icon.ico"
 
 Stop-ExistingExe "LocalCustomGUI-Manager"
-Invoke-Checked $CondaExe @("run", "-n", "local_customgui_windows", "python", "-m", "pip", "install", "pyinstaller")
+Invoke-Checked $CondaExe @("run", "-n", "local_customgui_windows", "python", "-m", "pip", "install", "pyinstaller", "pystray", "pillow")
 Invoke-Checked $CondaExe @(
   "run", "-n", "local_customgui_windows", "python", "-m", "PyInstaller",
   "--noconfirm",
@@ -65,6 +65,7 @@ Invoke-Checked $CondaExe @(
   "--name", "LocalCustomGUI-Manager",
   "--icon", $IconPath,
   "--hidden-import", "tkinter.messagebox",
+  "--hidden-import", "pystray._win32",
   "--add-data", $LogoData,
   "--add-data", $IconData,
   ".\packaging\windows\windows_manager_launcher.py"

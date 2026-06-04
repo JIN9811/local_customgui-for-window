@@ -175,6 +175,8 @@ dist\LocalCustomGUI-Manager.exe
 
 이 Manager EXE는 AIM4LAB 로고가 들어간 GUI 창에서 Install, Run, Uninstall 탭을 제공한다. 설치는 Miniconda/Ollama 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 준비, Streamlit 실행까지 진행한다. 삭제는 선택한 항목만 지우며, 실제 삭제 전 `DELETE` 입력과 확인 창을 요구한다. 배포 시에는 이 파일 하나를 기본 안내 대상으로 쓰면 된다.
 
+Streamlit 서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 서버는 종료되지 않고 Windows 시스템 트레이로 숨겨진다. 트레이 아이콘 우클릭 메뉴에서 `Open GUI`, `Restart Server`, `Quit Server`, `Open Browser`를 사용할 수 있다.
+
 패키징 관련 파일 구조:
 
 ```text

@@ -412,6 +412,9 @@ class ManagerApp:
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
         self.streamlit_proc: subprocess.Popen[str] | None = None
+        self.hidden_to_tray = False
+        self.tray_icon = None
+        self.tray_thread: threading.Thread | None = None
 
         self._setup_style()
         self._build_layout(ScrolledText)
@@ -629,6 +632,8 @@ class ManagerApp:
                 self.delete_confirm_var.set("")
             elif event == "refresh_delete":
                 self.refresh_delete_options()
+            elif event == "shutdown":
+                self.shutdown_app()
         self.root.after(100, self._poll_queue)
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
@@ -711,6 +716,18 @@ class ManagerApp:
             raise RuntimeError(f"Conda env was not found: {ENV_NAME}. Run Install first.")
         self.start_streamlit_process(project_root, conda_exe)
 
+    def restart_server_from_tray(self) -> None:
+        if self.busy:
+            self.log("[WAIT] Another task is already running. Restart was skipped.")
+            return
+        self.start_task("Restarting server", self.restart_server_flow)
+
+    def restart_server_flow(self) -> None:
+        self.log("")
+        self.log("=== Restart Server ===")
+        self.stop_streamlit()
+        self.run_flow()
+
     def start_streamlit_process(self, project_root: Path, conda_exe: Path) -> None:
         url = f"http://127.0.0.1:{PORT}"
         if self.streamlit_proc and self.streamlit_proc.poll() is None:
@@ -772,6 +789,7 @@ class ManagerApp:
         proc = self.streamlit_proc
         if not proc or proc.poll() is not None:
             self.log("[OK] No Streamlit process is running from this manager.")
+            self.streamlit_proc = None
             return
         self.log("[STOPPING] Streamlit process")
         proc.terminate()
@@ -779,7 +797,12 @@ class ManagerApp:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.wait(timeout=5)
+        self.streamlit_proc = None
         self.log("[DONE] Streamlit process stopped.")
+
+    def is_streamlit_running(self) -> bool:
+        return self.streamlit_proc is not None and self.streamlit_proc.poll() is None
 
     def open_project_folder(self) -> None:
         project_root = find_project_root()
@@ -915,17 +938,107 @@ class ManagerApp:
         self.queue.put(("refresh_delete", None))
         self.log("[DONE] Uninstall completed.")
 
-    def _on_close(self) -> None:
-        proc = self.streamlit_proc
-        if proc and proc.poll() is None:
-            if not self.messagebox.askyesno(
-                "Streamlit is running",
-                "Streamlit was started from this manager. Stop it before closing?",
-            ):
-                self.root.destroy()
-                return
-            self.stop_streamlit()
+    def ensure_tray_icon(self) -> bool:
+        if self.tray_icon is not None:
+            return True
+        try:
+            import pystray
+            from PIL import Image
+        except Exception as exc:
+            self.log(f"[WARN] System tray could not be initialized: {exc}")
+            return False
+
+        icon_path = resource_path("Icon", "aim4lab_app_icon.png")
+        if not icon_path.exists():
+            self.log(f"[WARN] Tray icon was not found: {icon_path}")
+            return False
+
+        def call_on_tk(callback):
+            return lambda _icon, _item=None: self.root.after(0, callback)
+
+        image = Image.open(icon_path)
+        menu = pystray.Menu(
+            pystray.MenuItem("Open GUI", call_on_tk(self.show_from_tray), default=True),
+            pystray.MenuItem("Restart Server", call_on_tk(self.restart_server_from_tray)),
+            pystray.MenuItem("Quit Server", call_on_tk(self.quit_server_from_tray)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Open Browser", lambda _icon, _item=None: webbrowser.open(f"http://127.0.0.1:{PORT}")),
+        )
+        self.tray_icon = pystray.Icon(
+            "LocalCustomGUI",
+            image,
+            "AIM4LAB LocalCustomGUI Server",
+            menu,
+        )
+
+        if hasattr(self.tray_icon, "run_detached"):
+            self.tray_icon.run_detached()
+        else:
+            self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+            self.tray_thread.start()
+        return True
+
+    def hide_to_tray(self) -> None:
+        if not self.ensure_tray_icon():
+            self.messagebox.showwarning(
+                "Tray unavailable",
+                "The server is still running, but the tray icon could not be created.",
+            )
+            return
+        self.hidden_to_tray = True
+        self.root.withdraw()
+        self.log("[INFO] Manager hidden to system tray. Right-click the tray icon for server actions.")
+        self.status_var.set("Running in tray")
+        tray_icon = self.tray_icon
+        if tray_icon is not None and hasattr(tray_icon, "notify"):
+            try:
+                tray_icon.notify(
+                    "Server is still running. Right-click this icon to restart or quit.",
+                    "AIM4LAB LocalCustomGUI",
+                )
+            except Exception:
+                pass
+
+    def show_from_tray(self) -> None:
+        self.hidden_to_tray = False
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+        self.status_var.set("Ready")
+
+    def quit_server_from_tray(self) -> None:
+        if self.busy:
+            self.log("[WAIT] Another task is already running. Quit was skipped.")
+            return
+
+        def worker() -> None:
+            try:
+                self.log("")
+                self.log("=== Quit Server ===")
+                self.stop_streamlit()
+            finally:
+                self.queue.put(("shutdown", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def stop_tray_icon(self) -> None:
+        tray_icon = self.tray_icon
+        self.tray_icon = None
+        if tray_icon is not None:
+            try:
+                tray_icon.stop()
+            except Exception:
+                pass
+
+    def shutdown_app(self) -> None:
+        self.stop_tray_icon()
         self.root.destroy()
+
+    def _on_close(self) -> None:
+        if self.is_streamlit_running():
+            self.hide_to_tray()
+            return
+        self.shutdown_app()
 
     def run(self) -> int:
         self.root.mainloop()
@@ -937,13 +1050,22 @@ def self_test() -> int:
     conda_exe = find_conda_exe()
     ollama_exe = find_ollama_exe()
     logo = resource_path("Logo", "logo_aim4lab.png")
+    app_icon = resource_path("Icon", "aim4lab_app_icon.png")
+    try:
+        import pystray  # noqa: F401
+
+        pystray_ok = True
+    except Exception:
+        pystray_ok = False
     print(f"project={project_root}")
     print(f"conda={conda_exe}")
     print(f"ollama={ollama_exe}")
     print(f"logo={logo} exists={logo.exists()}")
+    print(f"app_icon={app_icon} exists={app_icon.exists()}")
+    print(f"pystray={pystray_ok}")
     print(f"conda_env={conda_env_exists(conda_exe)}")
     print(f"ollama_model={ollama_model_exists(ollama_exe)}")
-    return 0 if project_root and logo.exists() else 1
+    return 0 if project_root and logo.exists() and app_icon.exists() and pystray_ok else 1
 
 
 def main() -> int:
