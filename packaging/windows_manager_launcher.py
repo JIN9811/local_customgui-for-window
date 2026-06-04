@@ -1,0 +1,943 @@
+from __future__ import annotations
+
+import argparse
+import os
+import queue
+import shutil
+import stat
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+
+ENV_NAME = "local_customgui_windows"
+OLLAMA_MODEL = "gemma4:e2b"
+PORT = "8791"
+TOTAL_INSTALL_STEPS = 9
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def creation_flags() -> int:
+    return CREATE_NO_WINDOW if os.name == "nt" else 0
+
+
+def exe_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def bundle_dir() -> Path:
+    frozen_bundle = getattr(sys, "_MEIPASS", None)
+    if frozen_bundle:
+        return Path(frozen_bundle)
+    return Path(__file__).resolve().parents[1]
+
+
+def resource_path(*parts: str) -> Path:
+    return bundle_dir().joinpath(*parts)
+
+
+def find_project_root() -> Path | None:
+    env_root = os.environ.get("LOCAL_CUSTOMGUI_PROJECT_ROOT")
+    candidates: list[Path] = []
+    if env_root:
+        candidates.append(Path(env_root))
+    cwd = Path.cwd()
+    here = exe_dir()
+    candidates.extend([cwd, here, here.parent, here.parent.parent])
+    for candidate in candidates:
+        if (candidate / "streamlit_app.py").exists() and (candidate / "requirements.txt").exists():
+            return candidate.resolve()
+    return None
+
+
+def require_project_root() -> Path:
+    project_root = find_project_root()
+    if project_root:
+        return project_root
+    raise RuntimeError(
+        "Could not find streamlit_app.py. Run this EXE from the project folder or dist folder, "
+        "or set LOCAL_CUSTOMGUI_PROJECT_ROOT to the project folder."
+    )
+
+
+def find_conda_exe() -> Path | None:
+    candidates: list[Path] = []
+    value = os.environ.get("CONDA_EXE")
+    if value:
+        candidates.append(Path(value))
+    user_profile = os.environ.get("USERPROFILE")
+    if user_profile:
+        candidates.extend(
+            [
+                Path(user_profile) / "miniconda3" / "Scripts" / "conda.exe",
+                Path(user_profile) / "anaconda3" / "Scripts" / "conda.exe",
+            ]
+        )
+    for env_key, suffix in (
+        ("LOCALAPPDATA", ("miniconda3", "Scripts", "conda.exe")),
+        ("PROGRAMDATA", ("miniconda3", "Scripts", "conda.exe")),
+        ("PROGRAMFILES", ("Miniconda3", "Scripts", "conda.exe")),
+    ):
+        base = os.environ.get(env_key)
+        if base:
+            candidates.append(Path(base).joinpath(*suffix))
+    found = shutil.which("conda")
+    if found:
+        candidates.append(Path(found))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
+
+
+def find_ollama_exe() -> Path | None:
+    candidates: list[Path] = []
+    found = shutil.which("ollama")
+    if found:
+        candidates.append(Path(found))
+    for env_key, suffix in (
+        ("LOCALAPPDATA", ("Programs", "Ollama", "ollama.exe")),
+        ("PROGRAMFILES", ("Ollama", "ollama.exe")),
+    ):
+        base = os.environ.get(env_key)
+        if base:
+            candidates.append(Path(base).joinpath(*suffix))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
+
+
+def run_quiet(cmd: list[str], *, cwd: Path | None = None) -> tuple[int, str]:
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        creationflags=creation_flags(),
+    )
+    return int(proc.returncode), proc.stdout
+
+
+def run_live(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, log=print) -> None:
+    log("")
+    log("[RUNNING] " + " ".join(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=creation_flags(),
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        log(line.rstrip())
+    return_code = proc.wait()
+    if return_code != 0:
+        raise RuntimeError(f"Command failed(returncode={return_code}): {' '.join(cmd)}")
+    log("[DONE] Command completed")
+
+
+def conda_env_exists(conda_exe: Path | None) -> bool:
+    if not conda_exe:
+        return False
+    code, _ = run_quiet([str(conda_exe), "run", "-n", ENV_NAME, "python", "--version"])
+    return code == 0
+
+
+def ollama_model_exists(ollama_exe: Path | None) -> bool:
+    if not ollama_exe:
+        return False
+    code, output = run_quiet([str(ollama_exe), "list"])
+    if code != 0:
+        return False
+    model_name = OLLAMA_MODEL.lower()
+    for line in output.splitlines()[1:]:
+        columns = line.split()
+        if columns and columns[0].lower() == model_name:
+            return True
+    return False
+
+
+def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2):
+                return True
+        except (OSError, urllib.error.URLError):
+            time.sleep(1)
+    return False
+
+
+def install_winget(package_id: str, *, log=print) -> None:
+    winget = shutil.which("winget")
+    if not winget:
+        raise RuntimeError("winget was not found. Install Miniconda/Ollama manually, then run this manager again.")
+    run_live(
+        [
+            winget,
+            "install",
+            "-e",
+            "--id",
+            package_id,
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ],
+        log=log,
+    )
+
+
+def ensure_conda(*, log=print) -> Path:
+    conda_exe = find_conda_exe()
+    if conda_exe:
+        log(f"[OK] Miniconda found: {conda_exe}")
+        return conda_exe
+    log("[RUNNING] Miniconda was not found. Installing with winget.")
+    install_winget("Anaconda.Miniconda3", log=log)
+    for _ in range(20):
+        conda_exe = find_conda_exe()
+        if conda_exe:
+            return conda_exe
+        time.sleep(3)
+    raise RuntimeError("Miniconda was installed, but conda.exe was not found. Reopen Windows and try again.")
+
+
+def ensure_ollama(*, log=print) -> Path | None:
+    ollama_exe = find_ollama_exe()
+    if ollama_exe:
+        log(f"[OK] Ollama found: {ollama_exe}")
+        return ollama_exe
+    log("[RUNNING] Ollama was not found. Installing with winget.")
+    try:
+        install_winget("Ollama.Ollama", log=log)
+    except Exception as exc:
+        log(f"[WARN] Ollama auto-install failed: {exc}")
+        return None
+    for _ in range(20):
+        ollama_exe = find_ollama_exe()
+        if ollama_exe:
+            return ollama_exe
+        time.sleep(3)
+    log("[WARN] Ollama was installed, but ollama.exe was not found. LLM features may need manual setup.")
+    return None
+
+
+def ensure_conda_env(conda_exe: Path, *, log=print) -> None:
+    if conda_env_exists(conda_exe):
+        log(f"[OK] Conda env exists: {ENV_NAME}")
+        return
+    run_live(
+        [
+            str(conda_exe),
+            "create",
+            "-y",
+            "-n",
+            ENV_NAME,
+            "--override-channels",
+            "-c",
+            "conda-forge",
+            "python=3.11",
+            "pip",
+        ],
+        log=log,
+    )
+
+
+def install_python_deps(conda_exe: Path, project_root: Path, *, log=print) -> None:
+    base = [str(conda_exe), "run", "-n", ENV_NAME, "python", "-m"]
+    run_live([*base, "pip", "install", "-U", "pip"], cwd=project_root, log=log)
+    run_live([*base, "pip", "install", "-r", "requirements.txt"], cwd=project_root, log=log)
+    run_live([*base, "pip", "install", "-r", "requirements-pycaret.txt"], cwd=project_root, log=log)
+    run_live([*base, "pip", "install", "-e", "."], cwd=project_root, log=log)
+
+
+def ensure_env_file(project_root: Path, *, log=print) -> None:
+    env_file = project_root / ".env"
+    example = project_root / ".env.example"
+    if env_file.exists():
+        log(f"[OK] .env exists: {env_file}")
+        return
+    if example.exists():
+        env_file.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        log(f"[DONE] Created .env from .env.example: {env_file}")
+        return
+    log("[WARN] .env.example was not found. Skipping .env creation.")
+
+
+def ensure_streamlit_config(*, log=print) -> None:
+    user_profile = os.environ.get("USERPROFILE")
+    if not user_profile:
+        log("[WARN] USERPROFILE was not found. Skipping Streamlit user config.")
+        return
+    config_dir = Path(user_profile) / ".streamlit"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    target = config_dir / "config.toml"
+    target.write_text(
+        "[server]\n"
+        "headless = true\n"
+        "showEmailPrompt = false\n\n"
+        "[browser]\n"
+        "gatherUsageStats = false\n",
+        encoding="utf-8",
+    )
+    log(f"[DONE] Streamlit user config ready: {target}")
+
+
+def ensure_ollama_model(ollama_exe: Path | None, *, log=print) -> None:
+    if not ollama_exe:
+        log("[WARN] ollama.exe was not found. Skipping model download.")
+        return
+    if ollama_model_exists(ollama_exe):
+        log(f"[OK] Ollama model exists: {OLLAMA_MODEL}")
+        return
+    if run_quiet([str(ollama_exe), "list"])[0] != 0:
+        log("[RUNNING] Starting Ollama server.")
+        subprocess.Popen(
+            [str(ollama_exe), "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creation_flags(),
+        )
+        time.sleep(5)
+    run_live([str(ollama_exe), "pull", OLLAMA_MODEL], log=log)
+
+
+def is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def make_writable(func, path: str, _exc_info) -> None:
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def remove_path(path: Path, allowed_root: Path, *, log=print) -> None:
+    if not path.exists() and not path.is_symlink():
+        log(f"[SKIP] Missing: {path}")
+        return
+    if path.resolve() == allowed_root.resolve() or not is_under(path, allowed_root):
+        raise RuntimeError(f"Refusing to delete outside allowed root: {path}")
+    log(f"[DELETE] {path}")
+    if path.is_symlink():
+        path.unlink()
+        return
+    if path.is_file():
+        path.chmod(stat.S_IWRITE)
+        path.unlink()
+        return
+    shutil.rmtree(path, onerror=make_writable)
+
+
+def runtime_targets(project_root: Path | None) -> list[Path]:
+    if not project_root:
+        return []
+    targets = [
+        project_root / "state",
+        project_root / "logs.log",
+        project_root / ".pytest_cache",
+        project_root / "__pycache__",
+    ]
+    return [target for target in targets if target.exists() or target.is_symlink()]
+
+
+def env_targets(project_root: Path | None) -> list[Path]:
+    if not project_root:
+        return []
+    target = project_root / ".env"
+    return [target] if target.exists() else []
+
+
+def model_targets(project_root: Path | None) -> list[Path]:
+    if not project_root:
+        return []
+    targets: list[Path] = []
+    for task_name in ("classification", "regression"):
+        task_dir = project_root / "models" / task_name
+        if not task_dir.exists():
+            continue
+        for child in sorted(task_dir.iterdir()):
+            targets.append(child)
+    return targets
+
+
+def streamlit_config_target() -> Path | None:
+    user_profile = os.environ.get("USERPROFILE")
+    if not user_profile:
+        return None
+    target = Path(user_profile) / ".streamlit" / "config.toml"
+    return target if target.exists() else None
+
+
+class ManagerApp:
+    def __init__(self) -> None:
+        import tkinter as tk
+        from tkinter import ttk
+        from tkinter.scrolledtext import ScrolledText
+
+        self.tk = tk
+        self.ttk = ttk
+        self.messagebox = __import__("tkinter.messagebox", fromlist=["messagebox"])
+        self.root = tk.Tk()
+        self.root.title("AIM4LAB LocalCustomGUI Manager")
+        self.root.geometry("900x680")
+        self.root.minsize(820, 600)
+        self.root.configure(bg="#f4f6f8")
+        self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
+        self.busy = False
+        self.streamlit_proc: subprocess.Popen[str] | None = None
+
+        self._setup_style()
+        self._build_layout(ScrolledText)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(100, self._poll_queue)
+        self.root.after(250, self.refresh_delete_options)
+
+    def _setup_style(self) -> None:
+        style = self.ttk.Style()
+        try:
+            style.theme_use("clam")
+        except self.tk.TclError:
+            pass
+        style.configure("TFrame", background="#f4f6f8")
+        style.configure("Header.TFrame", background="#ffffff")
+        style.configure("TLabel", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 10))
+        style.configure("HeaderTitle.TLabel", background="#ffffff", foreground="#111827", font=("Segoe UI", 18, "bold"))
+        style.configure("HeaderSub.TLabel", background="#ffffff", foreground="#6b7280", font=("Segoe UI", 10))
+        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), padding=(18, 9))
+        style.configure("TButton", font=("Segoe UI", 10), padding=(14, 8))
+        style.configure("TCheckbutton", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 10))
+        style.configure("TLabelframe", background="#f4f6f8", foreground="#374151")
+        style.configure("TLabelframe.Label", background="#f4f6f8", foreground="#374151", font=("Segoe UI", 10, "bold"))
+        style.configure("Horizontal.TProgressbar", troughcolor="#e5e7eb", background="#f97316", thickness=12)
+
+    def _build_layout(self, scrolled_text_class) -> None:
+        tk = self.tk
+        ttk = self.ttk
+        header = ttk.Frame(self.root, style="Header.TFrame", padding=(22, 18))
+        header.pack(fill="x")
+        logo_path = resource_path("Logo", "logo_aim4lab.png")
+        self.logo_image = None
+        self.logo_display = None
+        if logo_path.exists():
+            try:
+                self.logo_image = tk.PhotoImage(file=str(logo_path))
+                factor = max(1, self.logo_image.width() // 190)
+                self.logo_display = self.logo_image.subsample(factor, factor)
+                self.root.iconphoto(False, self.logo_image)
+                logo_label = tk.Label(header, image=self.logo_display, bg="#ffffff", borderwidth=0)
+                logo_label.pack(side="left", padx=(0, 22))
+            except tk.TclError:
+                pass
+        title_box = ttk.Frame(header, style="Header.TFrame")
+        title_box.pack(side="left", fill="x", expand=True)
+        ttk.Label(title_box, text="LocalCustomGUI Manager", style="HeaderTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            title_box,
+            text="Install, run, and uninstall the Windows environment from one AIM4LAB wizard.",
+            style="HeaderSub.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+        self.status_var = tk.StringVar(value="Ready")
+        ttk.Label(header, textvariable=self.status_var, style="HeaderSub.TLabel").pack(side="right", anchor="n")
+
+        body = ttk.Frame(self.root, padding=(18, 16))
+        body.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(body)
+        self.notebook.pack(fill="both", expand=True)
+
+        self.install_tab = ttk.Frame(self.notebook, padding=18)
+        self.run_tab = ttk.Frame(self.notebook, padding=18)
+        self.uninstall_tab = ttk.Frame(self.notebook, padding=18)
+        self.notebook.add(self.install_tab, text="Install")
+        self.notebook.add(self.run_tab, text="Run")
+        self.notebook.add(self.uninstall_tab, text="Uninstall")
+
+        self._build_install_tab()
+        self._build_run_tab()
+        self._build_uninstall_tab()
+
+        log_frame = ttk.LabelFrame(body, text="Progress Log", padding=10)
+        log_frame.pack(fill="both", expand=False, pady=(14, 0))
+        self.log_text = scrolled_text_class(log_frame, height=10, wrap="word", font=("Consolas", 9))
+        self.log_text.pack(fill="both", expand=True)
+        self.log_text.configure(state="disabled")
+        self.log("AIM4LAB LocalCustomGUI Manager is ready.")
+
+    def _build_install_tab(self) -> None:
+        ttk = self.ttk
+        tk = self.tk
+        info = ttk.LabelFrame(self.install_tab, text="Install Options", padding=14)
+        info.pack(fill="x")
+        self.install_model_var = tk.BooleanVar(value=True)
+        self.install_launch_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(info, text=f"Download or verify Ollama model ({OLLAMA_MODEL})", variable=self.install_model_var).pack(
+            anchor="w", pady=2
+        )
+        ttk.Checkbutton(info, text="Launch Streamlit after install", variable=self.install_launch_var).pack(anchor="w", pady=2)
+        buttons = ttk.Frame(self.install_tab)
+        buttons.pack(fill="x", pady=(16, 8))
+        self.install_button = ttk.Button(buttons, text="Install / Repair", style="Accent.TButton", command=self.start_install)
+        self.install_button.pack(side="left")
+        ttk.Button(buttons, text="Open Project Folder", command=self.open_project_folder).pack(side="left", padx=(10, 0))
+        self.progress_var = tk.DoubleVar(value=0)
+        self.step_var = tk.StringVar(value="Waiting to start.")
+        ttk.Label(self.install_tab, textvariable=self.step_var).pack(anchor="w", pady=(14, 4))
+        self.progress = ttk.Progressbar(
+            self.install_tab,
+            variable=self.progress_var,
+            maximum=TOTAL_INSTALL_STEPS,
+            mode="determinate",
+            style="Horizontal.TProgressbar",
+        )
+        self.progress.pack(fill="x")
+        note = (
+            "The manager checks Miniconda and Ollama, creates the conda env, installs Python packages, "
+            "prepares Streamlit settings, and can launch the app."
+        )
+        ttk.Label(self.install_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
+
+    def _build_run_tab(self) -> None:
+        ttk = self.ttk
+        self.url_var = self.tk.StringVar(value=f"http://127.0.0.1:{PORT}")
+        row = ttk.Frame(self.run_tab)
+        row.pack(fill="x")
+        self.run_button = ttk.Button(row, text="Run App", style="Accent.TButton", command=self.start_run)
+        self.run_button.pack(side="left")
+        self.stop_button = ttk.Button(row, text="Stop App", command=self.stop_streamlit)
+        self.stop_button.pack(side="left", padx=(10, 0))
+        ttk.Button(row, text="Open Browser", command=lambda: webbrowser.open(self.url_var.get())).pack(side="left", padx=(10, 0))
+        ttk.Label(self.run_tab, text="Local URL").pack(anchor="w", pady=(20, 4))
+        ttk.Label(self.run_tab, textvariable=self.url_var, font=("Segoe UI", 14, "bold"), foreground="#f97316").pack(anchor="w")
+        note = "Use this tab after installation. The manager starts Streamlit from the local_customgui_windows conda environment."
+        ttk.Label(self.run_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
+
+    def _build_uninstall_tab(self) -> None:
+        ttk = self.ttk
+        tk = self.tk
+        self.delete_vars: dict[str, object] = {
+            "conda_env": tk.BooleanVar(value=True),
+            "ollama_model": tk.BooleanVar(value=True),
+            "runtime": tk.BooleanVar(value=True),
+            "env_file": tk.BooleanVar(value=True),
+            "models": tk.BooleanVar(value=False),
+            "streamlit_config": tk.BooleanVar(value=False),
+        }
+        self.delete_text_vars: dict[str, object] = {}
+        box = ttk.LabelFrame(self.uninstall_tab, text="Uninstall Items", padding=14)
+        box.pack(fill="x")
+        for key, label in (
+            ("conda_env", f"Conda env: {ENV_NAME}"),
+            ("ollama_model", f"Ollama model: {OLLAMA_MODEL}"),
+            ("runtime", "Runtime state, logs, and caches"),
+            ("env_file", "Local app config: .env"),
+            ("models", "Model artifacts under models/classification and models/regression"),
+            ("streamlit_config", "Streamlit user config in %USERPROFILE%\\.streamlit"),
+        ):
+            text_var = tk.StringVar(value=label)
+            self.delete_text_vars[key] = text_var
+            ttk.Checkbutton(box, textvariable=text_var, variable=self.delete_vars[key]).pack(anchor="w", pady=2)
+        controls = ttk.Frame(self.uninstall_tab)
+        controls.pack(fill="x", pady=(14, 8))
+        ttk.Button(controls, text="Recommended", command=self.select_recommended_delete).pack(side="left")
+        ttk.Button(controls, text="Select All", command=self.select_all_delete).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Clear", command=self.clear_delete_selection).pack(side="left", padx=(8, 0))
+        ttk.Button(controls, text="Refresh", command=self.refresh_delete_options).pack(side="left", padx=(8, 0))
+        ttk.Label(self.uninstall_tab, text="Type DELETE to enable uninstall").pack(anchor="w", pady=(16, 4))
+        self.delete_confirm_var = tk.StringVar()
+        self.delete_entry = ttk.Entry(self.uninstall_tab, textvariable=self.delete_confirm_var, width=22)
+        self.delete_entry.pack(anchor="w")
+        self.uninstall_button = ttk.Button(
+            self.uninstall_tab,
+            text="Uninstall Selected",
+            style="Accent.TButton",
+            command=self.start_uninstall,
+        )
+        self.uninstall_button.pack(anchor="w", pady=(16, 0))
+        note = (
+            "Recommended cleanup removes the conda env, Ollama model, runtime state/log/cache, and .env. "
+            "The project folder itself is never deleted automatically."
+        )
+        ttk.Label(self.uninstall_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
+
+    def log(self, message: str = "") -> None:
+        self.queue.put(("log", message))
+
+    def set_status(self, message: str) -> None:
+        self.queue.put(("status", message))
+
+    def set_step(self, index: int, message: str) -> None:
+        self.queue.put(("progress", (index, message)))
+
+    def _poll_queue(self) -> None:
+        while True:
+            try:
+                event, payload = self.queue.get_nowait()
+            except queue.Empty:
+                break
+            if event == "log":
+                self.log_text.configure(state="normal")
+                self.log_text.insert("end", str(payload) + "\n")
+                self.log_text.see("end")
+                self.log_text.configure(state="disabled")
+            elif event == "status":
+                self.status_var.set(str(payload))
+            elif event == "progress":
+                index, message = payload  # type: ignore[misc]
+                self.progress_var.set(float(index))
+                self.step_var.set(str(message))
+            elif event == "done":
+                self.busy = False
+                self._set_buttons_enabled(True)
+                self.status_var.set(str(payload))
+            elif event == "clear_delete_confirm":
+                self.delete_confirm_var.set("")
+            elif event == "refresh_delete":
+                self.refresh_delete_options()
+        self.root.after(100, self._poll_queue)
+
+    def _set_buttons_enabled(self, enabled: bool) -> None:
+        state = "normal" if enabled else "disabled"
+        for button in (self.install_button, self.run_button, self.uninstall_button):
+            button.configure(state=state)
+
+    def start_task(self, name: str, target) -> None:
+        if self.busy:
+            self.messagebox.showinfo("Busy", "Another task is already running.")
+            return
+        self.busy = True
+        self._set_buttons_enabled(False)
+        self.set_status(name)
+
+        def worker() -> None:
+            try:
+                target()
+                self.queue.put(("done", "Ready"))
+            except Exception as exc:
+                self.log("")
+                self.log(f"[ERROR] {exc}")
+                self.queue.put(("done", "Error"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def start_install(self) -> None:
+        download_model = bool(self.install_model_var.get())
+        launch_after = bool(self.install_launch_var.get())
+        self.start_task("Installing", lambda: self.install_flow(download_model, launch_after))
+
+    def install_flow(self, download_model: bool, launch_after: bool) -> None:
+        self.log("")
+        self.log("=== Install / Repair ===")
+        self.set_step(1, "Checking project and install paths")
+        project_root = require_project_root()
+        self.log(f"[INFO] Project: {project_root}")
+        self.log(f"[INFO] Logo: {resource_path('Logo', 'logo_aim4lab.png')}")
+
+        self.set_step(2, "Checking or installing Miniconda")
+        conda_exe = ensure_conda(log=self.log)
+
+        self.set_step(3, "Checking or installing Ollama")
+        ollama_exe = ensure_ollama(log=self.log)
+
+        self.set_step(4, f"Preparing conda env: {ENV_NAME}")
+        ensure_conda_env(conda_exe, log=self.log)
+
+        self.set_step(5, "Installing Python packages and PyCaret")
+        install_python_deps(conda_exe, project_root, log=self.log)
+
+        self.set_step(6, "Preparing .env")
+        ensure_env_file(project_root, log=self.log)
+
+        self.set_step(7, "Preparing Streamlit user config")
+        ensure_streamlit_config(log=self.log)
+
+        self.set_step(8, f"Preparing Ollama model: {OLLAMA_MODEL}")
+        if download_model:
+            ensure_ollama_model(ollama_exe, log=self.log)
+        else:
+            self.log("[SKIP] Ollama model download was unchecked.")
+
+        self.set_step(9, "Finishing")
+        self.log("[DONE] Install / repair completed.")
+        if launch_after:
+            self.start_streamlit_process(project_root, conda_exe)
+
+    def start_run(self) -> None:
+        self.start_task("Starting app", self.run_flow)
+
+    def run_flow(self) -> None:
+        self.log("")
+        self.log("=== Run App ===")
+        project_root = require_project_root()
+        conda_exe = find_conda_exe()
+        if not conda_exe:
+            raise RuntimeError("conda.exe was not found. Run Install first.")
+        if not conda_env_exists(conda_exe):
+            raise RuntimeError(f"Conda env was not found: {ENV_NAME}. Run Install first.")
+        self.start_streamlit_process(project_root, conda_exe)
+
+    def start_streamlit_process(self, project_root: Path, conda_exe: Path) -> None:
+        url = f"http://127.0.0.1:{PORT}"
+        if self.streamlit_proc and self.streamlit_proc.poll() is None:
+            self.log(f"[OK] Streamlit is already running: {url}")
+            webbrowser.open(url)
+            return
+        env = os.environ.copy()
+        env["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
+        env["STREAMLIT_SERVER_HEADLESS"] = "true"
+        env["STREAMLIT_SERVER_SHOW_EMAIL_PROMPT"] = "false"
+        cmd = [
+            str(conda_exe),
+            "run",
+            "-n",
+            ENV_NAME,
+            "python",
+            "-m",
+            "streamlit",
+            "run",
+            "streamlit_app.py",
+            "--server.address",
+            "127.0.0.1",
+            "--server.port",
+            PORT,
+            "--server.headless",
+            "true",
+            "--server.showEmailPrompt",
+            "false",
+            "--browser.gatherUsageStats",
+            "false",
+        ]
+        self.log("[RUNNING] " + " ".join(cmd))
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(project_root),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=creation_flags(),
+        )
+        self.streamlit_proc = proc
+
+        def reader() -> None:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                self.log(line.rstrip())
+
+        threading.Thread(target=reader, daemon=True).start()
+        if wait_for_server(url):
+            self.log(f"[DONE] Server is running: {url}")
+        else:
+            self.log(f"[WAIT] Server is still starting. Check your browser shortly: {url}")
+        webbrowser.open(url)
+
+    def stop_streamlit(self) -> None:
+        proc = self.streamlit_proc
+        if not proc or proc.poll() is not None:
+            self.log("[OK] No Streamlit process is running from this manager.")
+            return
+        self.log("[STOPPING] Streamlit process")
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        self.log("[DONE] Streamlit process stopped.")
+
+    def open_project_folder(self) -> None:
+        project_root = find_project_root()
+        if not project_root:
+            self.messagebox.showwarning("Project not found", "Could not find the project folder.")
+            return
+        os.startfile(str(project_root))
+
+    def delete_item_status(self) -> dict[str, bool]:
+        project_root = find_project_root()
+        conda_exe = find_conda_exe()
+        ollama_exe = find_ollama_exe()
+        return {
+            "conda_env": conda_env_exists(conda_exe),
+            "ollama_model": ollama_model_exists(ollama_exe),
+            "runtime": bool(runtime_targets(project_root)),
+            "env_file": bool(env_targets(project_root)),
+            "models": bool(model_targets(project_root)),
+            "streamlit_config": streamlit_config_target() is not None,
+        }
+
+    def refresh_delete_options(self) -> None:
+        labels = {
+            "conda_env": f"Conda env: {ENV_NAME}",
+            "ollama_model": f"Ollama model: {OLLAMA_MODEL}",
+            "runtime": "Runtime state, logs, and caches",
+            "env_file": "Local app config: .env",
+            "models": "Model artifacts under models/classification and models/regression",
+            "streamlit_config": "Streamlit user config in %USERPROFILE%\\.streamlit",
+        }
+        try:
+            statuses = self.delete_item_status()
+        except Exception as exc:
+            self.log(f"[WARN] Could not refresh uninstall status: {exc}")
+            return
+        for key, available in statuses.items():
+            status = "available" if available else "missing"
+            self.delete_text_vars[key].set(f"{labels[key]} [{status}]")  # type: ignore[index]
+
+    def select_recommended_delete(self) -> None:
+        for key, var in self.delete_vars.items():
+            var.set(key in {"conda_env", "ollama_model", "runtime", "env_file"})  # type: ignore[attr-defined]
+
+    def select_all_delete(self) -> None:
+        for var in self.delete_vars.values():
+            var.set(True)  # type: ignore[attr-defined]
+
+    def clear_delete_selection(self) -> None:
+        for var in self.delete_vars.values():
+            var.set(False)  # type: ignore[attr-defined]
+
+    def selected_delete_keys(self) -> list[str]:
+        return [key for key, var in self.delete_vars.items() if bool(var.get())]  # type: ignore[attr-defined]
+
+    def delete_preview(self, keys: list[str]) -> list[str]:
+        project_root = find_project_root()
+        lines: list[str] = []
+        if "conda_env" in keys:
+            lines.append(f"conda env remove -n {ENV_NAME}")
+        if "ollama_model" in keys:
+            lines.append(f"ollama rm {OLLAMA_MODEL}")
+        if "runtime" in keys:
+            lines.extend(str(path) for path in runtime_targets(project_root))
+        if "env_file" in keys:
+            lines.extend(str(path) for path in env_targets(project_root))
+        if "models" in keys:
+            lines.extend(str(path) for path in model_targets(project_root))
+        if "streamlit_config" in keys:
+            target = streamlit_config_target()
+            if target:
+                lines.append(str(target))
+        return lines
+
+    def start_uninstall(self) -> None:
+        keys = self.selected_delete_keys()
+        if not keys:
+            self.messagebox.showinfo("No selection", "Select at least one uninstall item.")
+            return
+        if self.delete_confirm_var.get().strip() != "DELETE":
+            self.messagebox.showwarning("Confirmation required", "Type DELETE before uninstalling selected items.")
+            return
+        preview = self.delete_preview(keys)
+        self.log("")
+        self.log("=== Uninstall Preview ===")
+        for line in preview[:40]:
+            self.log(line)
+        if len(preview) > 40:
+            self.log(f"... and {len(preview) - 40} more")
+        if not self.messagebox.askyesno(
+            "Confirm uninstall",
+            "Selected items will be deleted. The project folder itself will not be deleted automatically.\n\nContinue?",
+        ):
+            self.log("[CANCELLED] Uninstall cancelled.")
+            return
+        self.start_task("Uninstalling", lambda: self.uninstall_flow(keys))
+
+    def uninstall_flow(self, keys: list[str]) -> None:
+        self.log("")
+        self.log("=== Uninstall Selected ===")
+        self.stop_streamlit()
+        project_root = find_project_root()
+        conda_exe = find_conda_exe()
+        ollama_exe = find_ollama_exe()
+        if "conda_env" in keys:
+            if conda_exe and conda_env_exists(conda_exe):
+                run_live([str(conda_exe), "env", "remove", "-y", "-n", ENV_NAME], log=self.log)
+            else:
+                self.log(f"[SKIP] Conda env is missing: {ENV_NAME}")
+        if "ollama_model" in keys:
+            if ollama_exe and ollama_model_exists(ollama_exe):
+                run_live([str(ollama_exe), "rm", OLLAMA_MODEL], log=self.log)
+            else:
+                self.log(f"[SKIP] Ollama model is missing: {OLLAMA_MODEL}")
+        if project_root:
+            if "runtime" in keys:
+                for target in runtime_targets(project_root):
+                    remove_path(target, project_root, log=self.log)
+            if "env_file" in keys:
+                for target in env_targets(project_root):
+                    remove_path(target, project_root, log=self.log)
+            if "models" in keys:
+                for target in model_targets(project_root):
+                    remove_path(target, project_root, log=self.log)
+        elif any(key in keys for key in ("runtime", "env_file", "models")):
+            self.log("[SKIP] Project root was not found.")
+        if "streamlit_config" in keys:
+            target = streamlit_config_target()
+            if target:
+                remove_path(target, target.parent, log=self.log)
+            else:
+                self.log("[SKIP] Streamlit user config is missing.")
+        self.queue.put(("clear_delete_confirm", None))
+        self.queue.put(("refresh_delete", None))
+        self.log("[DONE] Uninstall completed.")
+
+    def _on_close(self) -> None:
+        proc = self.streamlit_proc
+        if proc and proc.poll() is None:
+            if not self.messagebox.askyesno(
+                "Streamlit is running",
+                "Streamlit was started from this manager. Stop it before closing?",
+            ):
+                self.root.destroy()
+                return
+            self.stop_streamlit()
+        self.root.destroy()
+
+    def run(self) -> int:
+        self.root.mainloop()
+        return 0
+
+
+def self_test() -> int:
+    project_root = find_project_root()
+    conda_exe = find_conda_exe()
+    ollama_exe = find_ollama_exe()
+    logo = resource_path("Logo", "logo_aim4lab.png")
+    print(f"project={project_root}")
+    print(f"conda={conda_exe}")
+    print(f"ollama={ollama_exe}")
+    print(f"logo={logo} exists={logo.exists()}")
+    print(f"conda_env={conda_env_exists(conda_exe)}")
+    print(f"ollama_model={ollama_model_exists(ollama_exe)}")
+    return 0 if project_root and logo.exists() else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="AIM4LAB LocalCustomGUI Windows manager.")
+    parser.add_argument("--self-test", action="store_true", help="Check paths and exit.")
+    args = parser.parse_args()
+    if args.self_test:
+        return self_test()
+    app = ManagerApp()
+    return app.run()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

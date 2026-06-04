@@ -161,6 +161,20 @@ conda run -n local_customgui_windows python -c "import pycaret; print(pycaret.__
 
 전체 Python/PyCaret/Ollama를 EXE 하나에 모두 묶는 방식은 권장하지 않는다. 대신 설치된 `local_customgui_windows` conda 환경을 실행하는 가벼운 런처 EXE를 만들 수 있다.
 
+설치, 실행, 삭제를 한 창에서 처리하는 AIM4LAB Manager EXE:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\build_windows_manager.ps1
+```
+
+생성 파일:
+
+```text
+dist\LocalCustomGUI-Manager.exe
+```
+
+이 Manager EXE는 AIM4LAB 로고가 들어간 GUI 창에서 Install, Run, Uninstall 탭을 제공한다. 설치는 Miniconda/Ollama 확인, conda 환경 생성, Python 패키지와 PyCaret 설치, Ollama 모델 준비, Streamlit 실행까지 진행한다. 삭제는 선택한 항목만 지우며, 실제 삭제 전 `DELETE` 입력과 확인 창을 요구한다. 배포 시에는 이 파일 하나를 기본 안내 대상으로 쓰면 된다.
+
 설치와 실행을 자동으로 처리하는 Setup EXE:
 
 ```powershell
