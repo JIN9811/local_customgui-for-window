@@ -189,6 +189,20 @@ dist\LocalCustomGUI-Windows.exe
 
 이 EXE는 프로젝트 폴더와 `local_customgui_windows` conda 환경이 이미 설치된 PC에서 Streamlit 앱을 실행한다. Ollama와 모델 파일은 EXE에 포함되지 않으며 기존 설치를 사용한다.
 
+설치/실행 흔적을 항목별로 선택 삭제하는 Delete EXE:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\build_windows_delete.ps1
+```
+
+생성 파일:
+
+```text
+dist\LocalCustomGUI-Delete.exe
+```
+
+이 EXE는 conda 환경, Ollama 모델, 런타임 state/log/cache, `.env`, 모델 artifact, Streamlit 사용자 설정을 메뉴에서 선택한 뒤 삭제한다. 실제 삭제 전 선택 대상 목록을 다시 보여주며 `DELETE`를 입력해야 진행한다. 프로젝트 폴더 자체는 자동 삭제하지 않는다.
+
 ## Linux/macOS 설치
 
 ```bash
