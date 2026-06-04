@@ -137,31 +137,10 @@ Invoke-Checked $CondaExe run -n $EnvName python -m streamlit run streamlit_app.p
 다음부터는 설치 과정을 반복하지 않고 아래만 실행하면 된다.
 
 ```powershell
-$ErrorActionPreference = "Stop"
-if (-not (Test-Path ".\streamlit_app.py")) {
-  throw "README.md와 streamlit_app.py가 있는 프로젝트 폴더로 이동한 뒤 실행하세요."
-}
-$CondaExe = $null
-$CondaCommand = Get-Command conda -ErrorAction SilentlyContinue
-if ($CondaCommand) {
-  $CondaExe = $CondaCommand.Source
-}
-if (-not $CondaExe) {
-  $CondaCandidates = @(
-    "$env:UserProfile\miniconda3\Scripts\conda.exe",
-    "$env:LocalAppData\miniconda3\Scripts\conda.exe",
-    "$env:ProgramData\miniconda3\Scripts\conda.exe",
-    "$env:ProgramFiles\Miniconda3\Scripts\conda.exe"
-  )
-  $CondaExe = $CondaCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-}
-if (-not $CondaExe) {
-  throw "conda.exe를 찾지 못했습니다. Miniconda 설치를 확인하세요."
-}
 $env:STREAMLIT_BROWSER_GATHER_USAGE_STATS = "false"
 $env:STREAMLIT_SERVER_HEADLESS = "true"
 $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
-& $CondaExe run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
+& "$env:UserProfile\miniconda3\Scripts\conda.exe" run -n local_customgui_windows python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --server.port 8791 --server.headless true --server.showEmailPrompt false --browser.gatherUsageStats false
 ```
 
 접속 주소:
