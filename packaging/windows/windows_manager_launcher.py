@@ -17,7 +17,7 @@ from tkinter import messagebox as tk_messagebox
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e2b"
+OLLAMA_MODEL = "gemma4:e4b"
 PORT = "8791"
 TOTAL_INSTALL_STEPS = 9
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)

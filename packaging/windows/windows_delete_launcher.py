@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e2b"
+OLLAMA_MODEL = "gemma4:e4b"
 
 
 def say(message: str = "") -> None:

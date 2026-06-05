@@ -86,7 +86,7 @@ if ($OllamaExe) {
     Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 5
   }
-  Invoke-Checked $OllamaExe pull gemma4:e2b
+  Invoke-Checked $OllamaExe pull gemma4:e4b
 } else {
   Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM 연결에는 Ollama 설치와 모델 다운로드가 필요합니다."
 }
@@ -177,7 +177,7 @@ LocalCustomGUI-Manager.exe --uninstall
 ```bash
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:e2b
+OLLAMA_MODEL=gemma4:e4b
 VLLM_BASE_URL=http://localhost:8000/v1
 VLLM_MODEL=local-model
 VLLM_API_KEY=EMPTY
@@ -186,7 +186,7 @@ VLLM_API_KEY=EMPTY
 Ollama 모델 수동 다운로드:
 
 ```powershell
-ollama pull gemma4:e2b
+ollama pull gemma4:e4b
 ```
 
 Ollama Desktop에서 Context length는 16k 근처로 맞추는 것을 권장합니다. Streamlit 앱의 기본 `Context Length`도 `16384`입니다.

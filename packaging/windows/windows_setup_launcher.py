@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e2b"
+OLLAMA_MODEL = "gemma4:e4b"
 PORT = "8791"
 TOTAL_STEPS = 9
 

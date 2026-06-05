@@ -59,7 +59,7 @@
 설치 단계:
 
 1. `Download or verify Ollama model`을 켜 둡니다.
-   기본 모델은 `gemma4:e2b`입니다.
+   기본 모델은 `gemma4:e4b`입니다.
 2. 설치가 끝나자마자 앱을 열고 싶으면 `Launch Streamlit after install`을 켜 둡니다.
 3. `Install / Repair`를 누릅니다.
 4. Manager가 Miniconda, Ollama, conda 환경, Python 패키지, Streamlit 설정, Ollama 모델을 순서대로 확인하고 준비합니다.
@@ -235,7 +235,7 @@ Manager의 `Uninstall` 탭에서 삭제할 항목을 선택합니다.
 기본 추천 삭제 항목:
 
 - conda 환경 `local_customgui_windows`
-- Ollama 모델 `gemma4:e2b`
+- Ollama 모델 `gemma4:e4b`
 - runtime state, logs, caches
 - `.env`
 - Windows 프로그램 추가/제거 등록 항목

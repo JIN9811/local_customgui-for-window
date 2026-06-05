@@ -40,7 +40,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "system_prompt": "You are a professional, user-friendly interface for high-voltage circuit breaker performance prediction. Answer in Korean unless the user asks otherwise.",
     "ollama": {
         "base_url": "http://127.0.0.1:11434",
-        "model": "gemma4:e2b",
+        "model": "gemma4:e4b",
         "num_ctx": 16384,
     },
     "vllm": {
@@ -281,7 +281,7 @@ def resolve_vllm_max_tokens(config: dict[str, Any], req: dict[str, Any]) -> int:
 def call_ollama(config: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
     backend_cfg = dict(config.get("ollama", {}))
     base_url = str(req.get("base_url") or backend_cfg.get("base_url") or "http://127.0.0.1:11434").rstrip("/")
-    model = str(req.get("model") or backend_cfg.get("model") or "gemma4:e2b")
+    model = str(req.get("model") or backend_cfg.get("model") or "gemma4:e4b")
     timeout = float(req.get("timeout_sec") or config.get("timeout_sec") or 240)
     temperature = float(req.get("temperature") if req.get("temperature") is not None else config.get("temperature", 0.3))
     max_tokens = int(req.get("max_tokens") or config.get("max_tokens") or 2048)
@@ -331,7 +331,7 @@ def call_ollama(config: dict[str, Any], req: dict[str, Any]) -> dict[str, Any]:
 def stream_ollama(config: dict[str, Any], req: dict[str, Any]) -> Iterator[dict[str, Any]]:
     backend_cfg = dict(config.get("ollama", {}))
     base_url = str(req.get("base_url") or backend_cfg.get("base_url") or "http://127.0.0.1:11434").rstrip("/")
-    model = str(req.get("model") or backend_cfg.get("model") or "gemma4:e2b")
+    model = str(req.get("model") or backend_cfg.get("model") or "gemma4:e4b")
     timeout = float(req.get("timeout_sec") or config.get("timeout_sec") or 240)
     temperature = float(req.get("temperature") if req.get("temperature") is not None else config.get("temperature", 0.3))
     max_tokens = int(req.get("max_tokens") or config.get("max_tokens") or 2048)

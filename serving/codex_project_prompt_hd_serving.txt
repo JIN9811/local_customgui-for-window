@@ -144,7 +144,7 @@ evaluate_model(best_model)
 ```bash
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:e2b
+OLLAMA_MODEL=gemma4:e4b
 LLM_TIMEOUT_SECONDS=60
 ```
 
@@ -689,7 +689,7 @@ Ollama 예시:
 
 ```bash
 ollama serve
-ollama pull gemma4:e2b
+ollama pull gemma4:e4b
 ```
 
 ---
