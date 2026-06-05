@@ -292,6 +292,10 @@ def local_streamlit_processes(project_root: Path | None = None) -> list[object]:
             continue
         if info.get("pid") == current_pid:
             continue
+        process_name = str(info.get("name") or "").lower()
+        runtime_process = process_name in {"python.exe", "pythonw.exe", "conda.exe", "streamlit.exe"}
+        if not runtime_process:
+            continue
         cmdline = info.get("cmdline") or []
         text = " ".join(
             [
@@ -319,12 +323,14 @@ $root = $root.ToLowerInvariant()
 $envName = $envName.ToLowerInvariant()
 $matched = 0
 Get-CimInstance Win32_Process | ForEach-Object {
+    $name = ([string]$_.Name).ToLowerInvariant()
+    $runtimeProcess = @("python.exe", "pythonw.exe", "conda.exe", "streamlit.exe") -contains $name
     $cmd = [string]$_.CommandLine
     $exe = [string]$_.ExecutablePath
     $text = ($cmd + " " + $exe).ToLowerInvariant()
     $appMatch = $text.Contains("streamlit_app.py") -and (($root.Length -eq 0) -or $text.Contains($root))
     $envMatch = ($envName.Length -gt 0) -and $text.Contains($envName) -and $text.Contains("streamlit")
-    if (($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
+    if ($runtimeProcess -and ($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
         $matched += 1
         Write-Output ("[STOPPING] Background Streamlit process PID " + $_.ProcessId)
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
@@ -381,6 +387,46 @@ def stop_external_streamlit_processes(project_root: Path | None = None, *, log=p
     log("[DONE] Background Streamlit cleanup completed.")
 
 
+def terminate_process_tree(proc: subprocess.Popen[str], *, log=print, timeout_sec: int = 8) -> None:
+    if proc.poll() is not None:
+        return
+    if psutil is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        return
+    try:
+        parent = psutil.Process(proc.pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+    try:
+        processes = parent.children(recursive=True) + [parent]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        processes = [parent]
+    for item in processes:
+        try:
+            log(f"[STOPPING] Process PID {item.pid}: {item.name()}")
+            item.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    _, alive = psutil.wait_procs(processes, timeout=timeout_sec)
+    for item in alive:
+        try:
+            log(f"[KILL] Process PID {item.pid}: {item.name()}")
+            item.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if alive:
+        psutil.wait_procs(alive, timeout=5)
+    try:
+        proc.wait(timeout=1)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
 def conda_env_exists(conda_exe: Path | None) -> bool:
     if not conda_exe:
         return False
@@ -406,13 +452,67 @@ def existing_ollama_models(ollama_exe: Path | None) -> list[str]:
     return [model for model in OLLAMA_MODELS if ollama_model_exists(ollama_exe, model)]
 
 
+def loaded_ollama_models(ollama_exe: Path | None) -> list[str]:
+    if not ollama_exe:
+        return []
+    code, output = run_quiet([str(ollama_exe), "ps"])
+    if code != 0:
+        return []
+    models: list[str] = []
+    for line in output.splitlines()[1:]:
+        columns = line.split()
+        if columns:
+            models.append(columns[0])
+    return models
+
+
 def stop_ollama_model(ollama_exe: Path | None, model: str, *, log=print) -> None:
     if not ollama_exe:
         return
     model = normalize_ollama_model(model)
-    code, _ = run_quiet([str(ollama_exe), "stop", model])
+    code, output = run_quiet([str(ollama_exe), "stop", model])
     if code == 0:
         log(f"[DONE] Ollama model stopped: {model}")
+    else:
+        log(f"[WARN] Could not stop Ollama model {model}: {output.strip() or 'unknown error'}")
+
+
+def wait_for_ollama_models_unloaded(
+    ollama_exe: Path | None,
+    models: list[str],
+    *,
+    log=print,
+    timeout_sec: int = 30,
+) -> None:
+    if not ollama_exe or not models:
+        return
+    targets = {model.lower() for model in models}
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        loaded = {model.lower() for model in loaded_ollama_models(ollama_exe)}
+        still_loaded = sorted(targets & loaded)
+        if not still_loaded:
+            log("[DONE] Ollama model unload confirmed.")
+            return
+        time.sleep(1)
+    loaded = {model.lower() for model in loaded_ollama_models(ollama_exe)}
+    still_loaded = sorted(targets & loaded)
+    if still_loaded:
+        log(f"[WARN] Ollama model is still unloading: {', '.join(still_loaded)}")
+
+
+def stop_loaded_ollama_models(ollama_exe: Path | None, *, log=print) -> None:
+    if not ollama_exe:
+        log("[SKIP] ollama.exe was not found.")
+        return
+    loaded = {model.lower() for model in loaded_ollama_models(ollama_exe)}
+    targets = [model for model in OLLAMA_MODELS if model.lower() in loaded]
+    if not targets:
+        log("[OK] No AIM4LAB Ollama model is loaded.")
+        return
+    for model in targets:
+        stop_ollama_model(ollama_exe, model, log=log)
+    wait_for_ollama_models_unloaded(ollama_exe, targets, log=log)
 
 
 def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
@@ -915,7 +1015,7 @@ class ManagerApp:
         row.pack(fill="x")
         self.run_button = ttk.Button(row, text="Run App", style="Accent.TButton", command=self.start_run)
         self.run_button.pack(side="left")
-        self.stop_button = ttk.Button(row, text="Stop App", command=self.stop_streamlit)
+        self.stop_button = ttk.Button(row, text="Stop App", command=self.start_stop)
         self.stop_button.pack(side="left", padx=(10, 0))
         ttk.Button(row, text="Open Browser", command=lambda: webbrowser.open(self.url_var.get())).pack(side="left", padx=(10, 0))
         ttk.Label(self.run_tab, text="Local URL").pack(anchor="w", pady=(20, 4))
@@ -1010,7 +1110,7 @@ class ManagerApp:
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
-        for button in (self.install_button, self.run_button, self.uninstall_button):
+        for button in (self.install_button, self.run_button, self.stop_button, self.uninstall_button):
             button.configure(state=state)
 
     def start_task(self, name: str, target) -> None:
@@ -1094,6 +1194,9 @@ class ManagerApp:
     def start_run(self) -> None:
         self.start_task("Starting app", self.run_flow)
 
+    def start_stop(self) -> None:
+        self.start_task("Stopping app", self.stop_streamlit)
+
     def run_flow(self) -> None:
         self.log("")
         self.log("=== Run App ===")
@@ -1175,20 +1278,22 @@ class ManagerApp:
         webbrowser.open(url)
 
     def stop_streamlit(self) -> None:
+        self.log("")
+        self.log("=== Stop App ===")
         proc = self.streamlit_proc
         if not proc or proc.poll() is not None:
             self.log("[OK] No Streamlit process is running from this manager.")
             self.streamlit_proc = None
-            return
-        self.log("[STOPPING] Streamlit process")
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
+        else:
+            self.log("[STOPPING] Streamlit process tree")
+            terminate_process_tree(proc, log=self.log)
+            self.streamlit_proc = None
+            self.log("[DONE] Streamlit process tree stopped.")
+        project_root = find_project_root()
+        stop_external_streamlit_processes(project_root, log=self.log)
+        stop_loaded_ollama_models(find_ollama_exe(), log=self.log)
         self.streamlit_proc = None
-        self.log("[DONE] Streamlit process stopped.")
+        self.log("[DONE] App runtime stopped.")
 
     def is_streamlit_running(self) -> bool:
         return self.streamlit_proc is not None and self.streamlit_proc.poll() is None
@@ -1305,7 +1410,6 @@ class ManagerApp:
         self.log("=== Uninstall Selected ===")
         self.stop_streamlit()
         project_root = find_project_root()
-        stop_external_streamlit_processes(project_root, log=self.log)
         conda_exe = find_conda_exe()
         ollama_exe = find_ollama_exe()
         if "conda_env" in keys:

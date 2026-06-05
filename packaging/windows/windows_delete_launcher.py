@@ -158,6 +158,10 @@ def local_streamlit_processes(project_root: Path | None = None) -> list[object]:
             continue
         if info.get("pid") == current_pid:
             continue
+        process_name = str(info.get("name") or "").lower()
+        runtime_process = process_name in {"python.exe", "pythonw.exe", "conda.exe", "streamlit.exe"}
+        if not runtime_process:
+            continue
         cmdline = info.get("cmdline") or []
         text = " ".join(
             [
@@ -185,12 +189,14 @@ $root = $root.ToLowerInvariant()
 $envName = $envName.ToLowerInvariant()
 $matched = 0
 Get-CimInstance Win32_Process | ForEach-Object {
+    $name = ([string]$_.Name).ToLowerInvariant()
+    $runtimeProcess = @("python.exe", "pythonw.exe", "conda.exe", "streamlit.exe") -contains $name
     $cmd = [string]$_.CommandLine
     $exe = [string]$_.ExecutablePath
     $text = ($cmd + " " + $exe).ToLowerInvariant()
     $appMatch = $text.Contains("streamlit_app.py") -and (($root.Length -eq 0) -or $text.Contains($root))
     $envMatch = ($envName.Length -gt 0) -and $text.Contains($envName) -and $text.Contains("streamlit")
-    if (($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
+    if ($runtimeProcess -and ($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
         $matched += 1
         Write-Output ("[STOPPING] Background Streamlit process PID " + $_.ProcessId)
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
