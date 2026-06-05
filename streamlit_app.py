@@ -465,6 +465,14 @@ def render_css() -> None:
           --hd-reasoning-spinner: rgba(219, 234, 254, .70);
           --hd-avatar-bg: #0f2a44;
           --hd-icon-color: #f8fafc;
+          --hd-chat-dock-bg: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, .94) 34%, rgba(15, 23, 42, .98));
+          --hd-chat-input-bg: #111c31;
+          --hd-chat-input-border: rgba(125, 211, 252, .24);
+          --hd-chat-input-shadow: 0 18px 42px rgba(2, 6, 23, .34);
+          --hd-chat-button-bg: #38bdf8;
+          --hd-chat-button-fg: #082f49;
+          --hd-chat-button-hover: #7dd3fc;
+          --hd-chat-focus: rgba(56, 189, 248, .32);
         }
         @media (prefers-color-scheme: light) {
           :root {
@@ -486,6 +494,14 @@ def render_css() -> None:
             --hd-reasoning-spinner: rgba(100, 116, 139, .48);
             --hd-avatar-bg: #e8eef8;
             --hd-icon-color: #1e293b;
+            --hd-chat-dock-bg: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, .94) 34%, rgba(255, 255, 255, .98));
+            --hd-chat-input-bg: #ffffff;
+            --hd-chat-input-border: rgba(14, 116, 144, .22);
+            --hd-chat-input-shadow: 0 16px 36px rgba(15, 23, 42, .10);
+            --hd-chat-button-bg: #0e7490;
+            --hd-chat-button-fg: #ffffff;
+            --hd-chat-button-hover: #155e75;
+            --hd-chat-focus: rgba(14, 116, 144, .22);
           }
         }
         [data-theme="light"],
@@ -510,6 +526,14 @@ def render_css() -> None:
           --hd-reasoning-spinner: rgba(100, 116, 139, .48);
           --hd-avatar-bg: #e8eef8;
           --hd-icon-color: #1e293b;
+          --hd-chat-dock-bg: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, .94) 34%, rgba(255, 255, 255, .98));
+          --hd-chat-input-bg: #ffffff;
+          --hd-chat-input-border: rgba(14, 116, 144, .22);
+          --hd-chat-input-shadow: 0 16px 36px rgba(15, 23, 42, .10);
+          --hd-chat-button-bg: #0e7490;
+          --hd-chat-button-fg: #ffffff;
+          --hd-chat-button-hover: #155e75;
+          --hd-chat-focus: rgba(14, 116, 144, .22);
         }
         [data-theme="dark"],
         [data-baseweb-theme="dark"],
@@ -535,6 +559,14 @@ def render_css() -> None:
           --hd-reasoning-spinner: rgba(219, 234, 254, .70);
           --hd-avatar-bg: #0f2a44;
           --hd-icon-color: #f8fafc;
+          --hd-chat-dock-bg: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, .94) 34%, rgba(15, 23, 42, .98));
+          --hd-chat-input-bg: #111c31;
+          --hd-chat-input-border: rgba(125, 211, 252, .24);
+          --hd-chat-input-shadow: 0 18px 42px rgba(2, 6, 23, .34);
+          --hd-chat-button-bg: #38bdf8;
+          --hd-chat-button-fg: #082f49;
+          --hd-chat-button-hover: #7dd3fc;
+          --hd-chat-focus: rgba(56, 189, 248, .32);
         }
         html[data-hd-streamlit-theme="light"] {
           color-scheme: light;
@@ -558,6 +590,14 @@ def render_css() -> None:
           --hd-reasoning-spinner: rgba(100, 116, 139, .48);
           --hd-avatar-bg: #e8eef8;
           --hd-icon-color: #1e293b;
+          --hd-chat-dock-bg: linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, .94) 34%, rgba(255, 255, 255, .98));
+          --hd-chat-input-bg: #ffffff;
+          --hd-chat-input-border: rgba(14, 116, 144, .22);
+          --hd-chat-input-shadow: 0 16px 36px rgba(15, 23, 42, .10);
+          --hd-chat-button-bg: #0e7490;
+          --hd-chat-button-fg: #ffffff;
+          --hd-chat-button-hover: #155e75;
+          --hd-chat-focus: rgba(14, 116, 144, .22);
         }
         .stApp, [data-testid="stAppViewContainer"], [data-testid="stSidebar"] { color: var(--hd-ui-text); }
         .block-container { max-width: 1320px; padding-top: 2.8rem; padding-bottom: 4rem; }
@@ -610,6 +650,50 @@ def render_css() -> None:
         }
         input::placeholder,
         textarea::placeholder { color: var(--hd-ui-muted) !important; opacity: .92; }
+        [data-testid="stBottomBlockContainer"],
+        [data-testid="stChatFloatingInputContainer"] {
+          background: var(--hd-chat-dock-bg) !important;
+        }
+        [data-testid="stChatInput"] {
+          color: var(--hd-ui-text) !important;
+        }
+        [data-testid="stChatInput"] > div,
+        [data-testid="stChatInput"] div[data-baseweb="textarea"],
+        [data-testid="stChatInput"] div[data-baseweb="base-input"] {
+          background: var(--hd-chat-input-bg) !important;
+          border-color: var(--hd-chat-input-border) !important;
+          box-shadow: var(--hd-chat-input-shadow) !important;
+        }
+        [data-testid="stChatInput"] textarea {
+          color: var(--hd-ui-text) !important;
+          caret-color: var(--hd-ui-text) !important;
+          background: transparent !important;
+        }
+        [data-testid="stChatInput"] textarea::placeholder {
+          color: var(--hd-ui-muted) !important;
+          opacity: .86;
+        }
+        [data-testid="stChatInput"]:focus-within > div,
+        [data-testid="stChatInput"] div[data-baseweb="textarea"]:focus-within,
+        [data-testid="stChatInput"] div[data-baseweb="base-input"]:focus-within {
+          border-color: var(--hd-chat-button-bg) !important;
+          box-shadow: 0 0 0 3px var(--hd-chat-focus), var(--hd-chat-input-shadow) !important;
+        }
+        [data-testid="stChatInput"] button,
+        [data-testid="stChatInputSubmitButton"] {
+          color: var(--hd-chat-button-fg) !important;
+          background: var(--hd-chat-button-bg) !important;
+          border-color: transparent !important;
+        }
+        [data-testid="stChatInput"] button:hover,
+        [data-testid="stChatInputSubmitButton"]:hover {
+          background: var(--hd-chat-button-hover) !important;
+        }
+        [data-testid="stChatInput"] button svg,
+        [data-testid="stChatInputSubmitButton"] svg {
+          color: var(--hd-chat-button-fg) !important;
+          fill: currentColor !important;
+        }
         .app-hero { margin: .65rem 0 1.1rem; padding: 1.1rem 1.25rem 1.25rem; border-radius: 24px; background: linear-gradient(135deg, #071c35 0%, #0b2c55 58%, #123965 100%); color: #fff; box-shadow: 0 22px 60px rgba(7,28,53,.18); }
         .app-hero-logo-row { display: flex; align-items: center; margin-bottom: .9rem; min-height: 42px; }
         .app-hero-logo { max-height: 42px; width: auto; object-fit: contain; display: block; }
