@@ -8,8 +8,6 @@
     ·
     <a href="#4-사용자-사용법"><strong>사용법</strong></a>
     ·
-    <a href="#6-튜토리얼-영상"><strong>튜토리얼 영상</strong></a>
-    ·
     <a href="#5-삭제"><strong>삭제</strong></a>
   </p>
 </div>
@@ -257,7 +255,7 @@ Windows 설정의 `프로그램 추가/제거`에서 `AIM4LAB LocalCustomGUI`를
 
 설치부터 실행, Excel 업로드, 모델 관리 흐름은 아래 튜토리얼 영상으로 확인할 수 있습니다.
 
-[튜토리얼 영상 다운로드](tutorial_video.mp4?raw=1)
+[튜토리얼 영상 폴더 열기](tutorial_video/)
 
 ## 7. 자주 생기는 상황
 
