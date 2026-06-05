@@ -834,7 +834,7 @@ class ManagerApp:
         body = ttk.Frame(self.root, padding=(14, 12))
         body.pack(fill="both", expand=True)
         self.notebook = ttk.Notebook(body)
-        self.notebook.configure(height=382)
+        self.notebook.configure(height=420)
         self.notebook.pack(fill="x", expand=False)
 
         self.install_tab = ttk.Frame(self.notebook, padding=14)
@@ -849,9 +849,9 @@ class ManagerApp:
         self._build_uninstall_tab()
 
         log_frame = ttk.LabelFrame(body, text="Progress Log", padding=10)
-        log_frame.pack(fill="both", expand=True, pady=(14, 0))
-        self.log_text = scrolled_text_class(log_frame, height=7, wrap="word", font=("Consolas", 9))
-        self.log_text.pack(fill="both", expand=True)
+        log_frame.pack(fill="x", expand=False, pady=(10, 0))
+        self.log_text = scrolled_text_class(log_frame, height=4, wrap="word", font=("Consolas", 9))
+        self.log_text.pack(fill="x", expand=False)
         self.log_text.configure(state="disabled")
         self.log("AIM4LAB LocalCustomGUI Manager is ready.")
 
@@ -936,7 +936,7 @@ class ManagerApp:
             "streamlit_config": tk.BooleanVar(value=False),
         }
         self.delete_text_vars: dict[str, object] = {}
-        box = ttk.LabelFrame(self.uninstall_tab, text="Uninstall Items", padding=14)
+        box = ttk.LabelFrame(self.uninstall_tab, text="Uninstall Items", padding=10)
         box.pack(fill="x")
         for key, label in (
             ("conda_env", f"Conda env: {ENV_NAME}"),
@@ -949,29 +949,26 @@ class ManagerApp:
         ):
             text_var = tk.StringVar(value=label)
             self.delete_text_vars[key] = text_var
-            ttk.Checkbutton(box, textvariable=text_var, variable=self.delete_vars[key]).pack(anchor="w", pady=2)
+            ttk.Checkbutton(box, textvariable=text_var, variable=self.delete_vars[key]).pack(anchor="w", pady=1)
         controls = ttk.Frame(self.uninstall_tab)
-        controls.pack(fill="x", pady=(14, 8))
+        controls.pack(fill="x", pady=(10, 6))
         ttk.Button(controls, text="Recommended", command=self.select_recommended_delete).pack(side="left")
         ttk.Button(controls, text="Select All", command=self.select_all_delete).pack(side="left", padx=(8, 0))
         ttk.Button(controls, text="Clear", command=self.clear_delete_selection).pack(side="left", padx=(8, 0))
         ttk.Button(controls, text="Refresh", command=self.refresh_delete_options).pack(side="left", padx=(8, 0))
-        ttk.Label(self.uninstall_tab, text="Type DELETE to enable uninstall").pack(anchor="w", pady=(16, 4))
+        confirm_row = ttk.Frame(self.uninstall_tab)
+        confirm_row.pack(fill="x", pady=(10, 0))
+        ttk.Label(confirm_row, text="Type DELETE").pack(side="left")
         self.delete_confirm_var = tk.StringVar()
-        self.delete_entry = ttk.Entry(self.uninstall_tab, textvariable=self.delete_confirm_var, width=22)
-        self.delete_entry.pack(anchor="w")
+        self.delete_entry = ttk.Entry(confirm_row, textvariable=self.delete_confirm_var, width=18)
+        self.delete_entry.pack(side="left", padx=(8, 12))
         self.uninstall_button = ttk.Button(
-            self.uninstall_tab,
+            confirm_row,
             text="Uninstall Selected",
             style="Accent.TButton",
             command=self.start_uninstall,
         )
-        self.uninstall_button.pack(anchor="w", pady=(16, 0))
-        note = (
-            "Recommended cleanup removes the conda env, Ollama model, runtime state/log/cache, .env, and Windows Apps entry. "
-            "The project folder itself is never deleted automatically."
-        )
-        ttk.Label(self.uninstall_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
+        self.uninstall_button.pack(side="left")
 
     def log(self, message: str = "") -> None:
         self.queue.put(("log", message))
