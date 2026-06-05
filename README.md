@@ -257,13 +257,7 @@ Windows 설정의 `프로그램 추가/제거`에서 `AIM4LAB LocalCustomGUI`를
 
 설치부터 실행, Excel 업로드, 모델 관리 흐름은 아래 튜토리얼 영상으로 확인할 수 있습니다.
 
-<p align="center">
-  <a href="tutorial_video.mp4?raw=1">
-    <img src="docs/assets/screenshots/tutorial-video-thumbnail.png" alt="튜토리얼 영상 보기" width="760">
-  </a>
-</p>
-
-GitHub README에서 영상이 바로 재생되지 않으면 [튜토리얼 영상 파일 열기](tutorial_video.mp4?raw=1)를 눌러 확인하세요.
+[튜토리얼 영상 다운로드](tutorial_video.mp4?raw=1)
 
 ## 7. 자주 생기는 상황
 
