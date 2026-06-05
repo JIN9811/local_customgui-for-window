@@ -59,6 +59,30 @@ def normalize_ollama_model(model: str | None) -> str:
     return value if value in OLLAMA_MODELS else OLLAMA_MODEL
 
 
+def normalize_ollama_models(models: list[str] | tuple[str, ...] | None) -> list[str]:
+    selected: list[str] = []
+    for model in models or []:
+        if str(model).strip().lower() == "both":
+            for item in OLLAMA_MODELS:
+                if item not in selected:
+                    selected.append(item)
+            continue
+        normalized = normalize_ollama_model(model)
+        if normalized not in selected:
+            selected.append(normalized)
+    return selected or [recommended_ollama_model()]
+
+
+def default_ollama_model_for_selection(models: list[str] | tuple[str, ...]) -> str:
+    selected = normalize_ollama_models(list(models))
+    recommended = recommended_ollama_model()
+    if recommended in selected:
+        return recommended
+    if OLLAMA_MODEL_E4B in selected:
+        return OLLAMA_MODEL_E4B
+    return selected[0]
+
+
 def installed_ram_gb() -> float | None:
     if os.name == "nt":
         class MEMORYSTATUSEX(ctypes.Structure):
@@ -387,9 +411,15 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print detected paths without installing.")
     parser.add_argument("--no-launch", action="store_true", help="Install only; do not launch Streamlit.")
     parser.add_argument("--skip-model", action="store_true", help="Skip ollama pull.")
-    parser.add_argument("--ollama-model", choices=OLLAMA_MODELS, help="Ollama model to install and set as the app default.")
+    parser.add_argument(
+        "--ollama-model",
+        action="append",
+        choices=(*OLLAMA_MODELS, "both"),
+        help="Ollama model to install. Repeat the option or use 'both' to install e2b and e4b.",
+    )
     args = parser.parse_args()
-    ollama_model = normalize_ollama_model(args.ollama_model or recommended_ollama_model())
+    ollama_models = normalize_ollama_models(args.ollama_model)
+    default_model = default_ollama_model_for_selection(ollama_models)
 
     try:
         step(1, "프로젝트/설치 경로 확인")
@@ -400,7 +430,8 @@ def main() -> int:
         say(f"[INFO] Conda: {conda_exe or 'not found'}")
         say(f"[INFO] Ollama: {ollama_exe or 'not found'}")
         ram_gb = installed_ram_gb()
-        say(f"[INFO] Selected Ollama model: {ollama_model}")
+        say(f"[INFO] Selected Ollama models: {', '.join(ollama_models)}")
+        say(f"[INFO] App default Ollama model: {default_model}")
         say(f"[INFO] RAM recommendation: 16 GB -> {OLLAMA_MODEL_E2B}, 32 GB-class or more -> {OLLAMA_MODEL_E4B}")
         if ram_gb is not None:
             say(f"[INFO] Detected RAM: {ram_gb:.0f} GB")
@@ -420,15 +451,16 @@ def main() -> int:
         step(5, "Python 패키지와 PyCaret 설치")
         install_python_deps(conda_exe, project_root)
         done("Python 패키지 설치 완료")
-        step(6, f"앱 기본 모델 설정: {ollama_model}")
-        set_default_ollama_model(project_root, ollama_model)
+        step(6, f"앱 기본 모델 설정: {default_model}")
+        set_default_ollama_model(project_root, default_model)
         done("앱 기본 모델 설정 완료")
         step(7, "Streamlit 첫 실행 설정 준비")
         ensure_streamlit_config()
         done("Streamlit 설정 준비 완료")
         if not args.skip_model:
-            step(8, f"Ollama 모델 다운로드/확인: {ollama_model}")
-            ensure_ollama_model(ollama_exe, ollama_model)
+            step(8, f"Ollama 모델 다운로드/확인: {', '.join(ollama_models)}")
+            for model in ollama_models:
+                ensure_ollama_model(ollama_exe, model)
             done("Ollama 모델 준비 완료")
         else:
             step(8, "Ollama 모델 다운로드 건너뜀")

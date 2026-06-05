@@ -169,6 +169,19 @@ LocalCustomGUI-Manager.exe
 
 Manager EXE는 AIM4LAB 로고와 아이콘을 포함하며 `Install`, `Run`, `Uninstall` 탭을 제공합니다.
 
+콘솔 설치 런처를 직접 사용할 때는 모델 옵션을 반복하거나 `both`를 지정할 수 있습니다.
+
+```powershell
+# RAM 기준 추천 모델 1개 자동 선택
+python packaging\windows\windows_setup_launcher.py
+
+# e2b와 e4b를 둘 다 다운로드하고 기본 모델은 RAM 추천값으로 설정
+python packaging\windows\windows_setup_launcher.py --ollama-model both
+
+# 명시적으로 두 모델 선택
+python packaging\windows\windows_setup_launcher.py --ollama-model gemma4:e2b --ollama-model gemma4:e4b
+```
+
 ## Windows 프로그램 추가/제거 등록
 
 설치 완료 시 Manager가 현재 사용자 기준으로 아래 항목을 등록합니다.
@@ -220,6 +233,8 @@ ollama pull gemma4:e2b
 # RAM 32GB 이상 권장
 ollama pull gemma4:e4b
 ```
+
+두 모델을 모두 준비하려면 위 두 명령을 모두 실행합니다. 앱 기본 모델은 `.env`의 `OLLAMA_MODEL`과 `config.json`의 `ollama.model` 값으로 결정됩니다.
 
 Ollama Desktop에서 Context length는 16k 근처로 맞추는 것을 권장합니다. Streamlit 앱의 기본 `Context Length`도 `16384`입니다.
 

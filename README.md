@@ -58,10 +58,11 @@
 
 설치 단계:
 
-1. Ollama 모델을 선택합니다.
+1. Ollama 모델을 하나 또는 둘 다 선택합니다.
    - RAM 16GB PC: `gemma4:e2b` 권장
    - RAM 32GB 이상 PC: `gemma4:e4b` 권장
-2. `Download or verify the selected Ollama model`을 켜 둡니다.
+   - 둘 다 선택하면 `e2b`와 `e4b`를 모두 다운로드하고, 앱 기본 모델은 RAM 추천값으로 저장됩니다.
+2. `Download or verify selected Ollama model(s)`를 켜 둡니다.
 3. 설치가 끝나자마자 앱을 열고 싶으면 `Launch Streamlit after install`을 켜 둡니다.
 4. `Install / Repair`를 누릅니다.
 5. Manager가 Miniconda, Ollama, conda 환경, Python 패키지, Streamlit 설정, 선택한 Ollama 모델을 순서대로 확인하고 준비합니다.

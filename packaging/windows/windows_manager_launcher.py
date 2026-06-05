@@ -63,6 +63,25 @@ def normalize_ollama_model(model: str | None) -> str:
     return value if value in OLLAMA_MODELS else OLLAMA_MODEL
 
 
+def normalize_ollama_models(models: list[str] | tuple[str, ...] | None) -> list[str]:
+    selected: list[str] = []
+    for model in models or []:
+        normalized = normalize_ollama_model(model)
+        if normalized not in selected:
+            selected.append(normalized)
+    return selected or [recommended_ollama_model()]
+
+
+def default_ollama_model_for_selection(models: list[str] | tuple[str, ...]) -> str:
+    selected = normalize_ollama_models(list(models))
+    recommended = recommended_ollama_model()
+    if recommended in selected:
+        return recommended
+    if OLLAMA_MODEL_E4B in selected:
+        return OLLAMA_MODEL_E4B
+    return selected[0]
+
+
 def installed_ram_gb() -> float | None:
     if os.name == "nt":
         class MEMORYSTATUSEX(ctypes.Structure):
@@ -101,11 +120,16 @@ def recommended_ollama_model() -> str:
 
 
 def ram_recommendation_text() -> str:
-    ram_gb = installed_ram_gb()
-    detected = f"Detected RAM: {ram_gb:.0f} GB. " if ram_gb is not None else ""
     selected = recommended_ollama_model()
     reason = "16 GB -> e2b. 32 GB-class or more -> e4b."
-    return f"{detected}Recommended model: {selected}. {reason}"
+    return f"Recommended model: {selected}. {reason}"
+
+
+def detected_ram_text() -> str:
+    ram_gb = installed_ram_gb()
+    if ram_gb is None:
+        return "Detected RAM: unavailable"
+    return f"Detected RAM: {ram_gb:.0f} GB"
 
 
 def manager_exe_for_registration(project_root: Path | None) -> Path:
@@ -696,23 +720,32 @@ class ManagerApp:
         info.pack(fill="x")
         self.install_model_var = tk.BooleanVar(value=True)
         self.install_launch_var = tk.BooleanVar(value=True)
-        self.install_ollama_model_var = tk.StringVar(value=recommended_ollama_model())
-        ttk.Label(info, text=ram_recommendation_text(), wraplength=820, foreground="#374151").pack(anchor="w", pady=(0, 8))
+        recommended_model = recommended_ollama_model()
+        self.install_ollama_model_vars = {
+            OLLAMA_MODEL_E2B: tk.BooleanVar(value=recommended_model == OLLAMA_MODEL_E2B),
+            OLLAMA_MODEL_E4B: tk.BooleanVar(value=recommended_model == OLLAMA_MODEL_E4B),
+        }
+        ttk.Label(info, text=ram_recommendation_text(), wraplength=820, foreground="#374151").pack(anchor="w", pady=(0, 2))
+        ttk.Label(info, text=detected_ram_text(), font=("Segoe UI", 10, "bold"), foreground="#111827").pack(anchor="w", pady=(0, 8))
         model_box = ttk.Frame(info)
         model_box.pack(fill="x", pady=(0, 6))
-        ttk.Radiobutton(
+        ttk.Checkbutton(
             model_box,
             text=f"{OLLAMA_MODEL_E2B} - recommended for 16 GB RAM PCs",
-            variable=self.install_ollama_model_var,
-            value=OLLAMA_MODEL_E2B,
+            variable=self.install_ollama_model_vars[OLLAMA_MODEL_E2B],
         ).pack(anchor="w", pady=1)
-        ttk.Radiobutton(
+        ttk.Checkbutton(
             model_box,
             text=f"{OLLAMA_MODEL_E4B} - better quality, 32 GB RAM or more recommended",
-            variable=self.install_ollama_model_var,
-            value=OLLAMA_MODEL_E4B,
+            variable=self.install_ollama_model_vars[OLLAMA_MODEL_E4B],
         ).pack(anchor="w", pady=1)
-        ttk.Checkbutton(info, text="Download or verify the selected Ollama model", variable=self.install_model_var).pack(
+        ttk.Label(
+            info,
+            text="You can select both models. If both are selected, the app default follows the RAM recommendation.",
+            wraplength=820,
+            foreground="#6b7280",
+        ).pack(anchor="w", pady=(0, 6))
+        ttk.Checkbutton(info, text="Download or verify selected Ollama model(s)", variable=self.install_model_var).pack(
             anchor="w", pady=2
         )
         ttk.Checkbutton(info, text="Launch Streamlit after install", variable=self.install_launch_var).pack(anchor="w", pady=2)
@@ -868,15 +901,26 @@ class ManagerApp:
     def start_install(self) -> None:
         download_model = bool(self.install_model_var.get())
         launch_after = bool(self.install_launch_var.get())
-        ollama_model = normalize_ollama_model(str(self.install_ollama_model_var.get()))
-        self.start_task("Installing", lambda: self.install_flow(download_model, launch_after, ollama_model))
+        ollama_models = [
+            model
+            for model in OLLAMA_MODELS
+            if bool(self.install_ollama_model_vars[model].get())  # type: ignore[index,attr-defined]
+        ]
+        if not ollama_models:
+            self.messagebox.showwarning("Model selection required", "Select at least one Ollama model.")
+            return
+        default_model = default_ollama_model_for_selection(ollama_models)
+        self.start_task("Installing", lambda: self.install_flow(download_model, launch_after, ollama_models, default_model))
 
-    def install_flow(self, download_model: bool, launch_after: bool, ollama_model: str) -> None:
-        ollama_model = normalize_ollama_model(ollama_model)
+    def install_flow(self, download_model: bool, launch_after: bool, ollama_models: list[str], default_model: str) -> None:
+        ollama_models = normalize_ollama_models(ollama_models)
+        default_model = default_ollama_model_for_selection(ollama_models)
         self.log("")
         self.log("=== Install / Repair ===")
-        self.log(f"[INFO] Selected Ollama model: {ollama_model}")
+        self.log(f"[INFO] Selected Ollama models: {', '.join(ollama_models)}")
+        self.log(f"[INFO] App default Ollama model: {default_model}")
         self.log(f"[INFO] {ram_recommendation_text()}")
+        self.log(f"[INFO] {detected_ram_text()}")
         self.set_step(1, "Checking project and install paths")
         project_root = require_project_root()
         self.log(f"[INFO] Project: {project_root}")
@@ -894,16 +938,17 @@ class ManagerApp:
         self.set_step(5, "Installing Python packages and PyCaret")
         install_python_deps(conda_exe, project_root, log=self.log)
 
-        self.set_step(6, f"Preparing app config: {ollama_model}")
-        set_default_ollama_model(project_root, ollama_model, log=self.log)
+        self.set_step(6, f"Preparing app config: {default_model}")
+        set_default_ollama_model(project_root, default_model, log=self.log)
 
         self.set_step(7, "Preparing Streamlit user config")
         ensure_streamlit_config(log=self.log)
         register_windows_uninstaller(project_root, log=self.log)
 
-        self.set_step(8, f"Preparing Ollama model: {ollama_model}")
+        self.set_step(8, f"Preparing Ollama models: {', '.join(ollama_models)}")
         if download_model:
-            ensure_ollama_model(ollama_exe, ollama_model, log=self.log)
+            for model in ollama_models:
+                ensure_ollama_model(ollama_exe, model, log=self.log)
         else:
             self.log("[SKIP] Ollama model download was unchecked.")
 
