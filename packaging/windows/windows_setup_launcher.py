@@ -20,6 +20,11 @@ OLLAMA_MODEL_E4B = "gemma4:e4b"
 OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
 OLLAMA_MODEL = OLLAMA_MODEL_E4B
 PORT = "8791"
+CONDA_TOS_CHANNELS = (
+    "https://repo.anaconda.com/pkgs/main",
+    "https://repo.anaconda.com/pkgs/r",
+    "https://repo.anaconda.com/pkgs/msys2",
+)
 TOTAL_STEPS = 9
 
 
@@ -231,6 +236,13 @@ def install_winget(package_id: str) -> None:
     run_checked([find_powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
 
 
+def accept_conda_tos(conda_exe: Path) -> None:
+    for channel in CONDA_TOS_CHANNELS:
+        code = run_quiet([str(conda_exe), "tos", "accept", "--override-channels", "--channel", channel])
+        if code == 0:
+            say(f"[OK] Conda ToS accepted: {channel}")
+
+
 def ensure_conda() -> Path:
     conda_exe = find_conda_exe()
     if conda_exe:
@@ -270,6 +282,7 @@ def ensure_conda_env(conda_exe: Path) -> None:
     if run_quiet([str(conda_exe), "run", "-n", ENV_NAME, "python", "--version"]) == 0:
         say(f"[OK] Conda env exists: {ENV_NAME}")
         return
+    accept_conda_tos(conda_exe)
     run_checked([str(conda_exe), "create", "-y", "-n", ENV_NAME, "--override-channels", "-c", "conda-forge", "python=3.11", "pip"])
 
 
@@ -405,6 +418,12 @@ def launch_streamlit(conda_exe: Path, project_root: Path) -> int:
         return 0
 
 
+def pause_before_exit(args: argparse.Namespace) -> None:
+    if args.dry_run or args.no_launch or args.skip_model or args.ollama_model:
+        return
+    input("Enter를 누르면 종료합니다...")
+
+
 def main() -> int:
     banner("LocalCustomGUI Windows Setup")
     parser = argparse.ArgumentParser(description="Install and launch LocalCustomGUI on Windows.")
@@ -474,7 +493,7 @@ def main() -> int:
     except Exception as exc:
         say("")
         say(f"[ERROR] {exc}")
-        input("Enter를 누르면 종료합니다...")
+        pause_before_exit(args)
         return 1
 
 

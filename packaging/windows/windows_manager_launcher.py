@@ -17,6 +17,11 @@ import webbrowser
 from pathlib import Path
 from tkinter import messagebox as tk_messagebox
 
+try:
+    import psutil
+except ImportError:  # pragma: no cover - bundled exe includes psutil, source mode may not.
+    psutil = None
+
 
 ENV_NAME = "local_customgui_windows"
 OLLAMA_MODEL_E2B = "gemma4:e2b"
@@ -25,6 +30,11 @@ OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
 OLLAMA_MODEL = OLLAMA_MODEL_E4B
 PORT = "8791"
 TOTAL_INSTALL_STEPS = 9
+CONDA_TOS_CHANNELS = (
+    "https://repo.anaconda.com/pkgs/main",
+    "https://repo.anaconda.com/pkgs/r",
+    "https://repo.anaconda.com/pkgs/msys2",
+)
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 GITHUB_URL = "https://github.com/JIN9811/local_customgui-for-window"
 APP_DISPLAY_NAME = "AIM4LAB LocalCustomGUI"
@@ -264,6 +274,113 @@ def run_live(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | N
     log("[DONE] Command completed")
 
 
+def local_streamlit_processes(project_root: Path | None = None) -> list[object]:
+    if psutil is None:
+        return []
+    root_text = ""
+    if project_root:
+        try:
+            root_text = str(project_root.resolve()).lower()
+        except OSError:
+            root_text = str(project_root).lower()
+    matches: list[object] = []
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(["pid", "name", "exe", "cmdline", "cwd"]):
+        try:
+            info = proc.as_dict(attrs=["pid", "name", "exe", "cmdline", "cwd"], ad_value="")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+        if info.get("pid") == current_pid:
+            continue
+        cmdline = info.get("cmdline") or []
+        text = " ".join(
+            [
+                str(info.get("name") or ""),
+                str(info.get("exe") or ""),
+                str(info.get("cwd") or ""),
+                " ".join(str(part) for part in cmdline),
+            ]
+        ).lower()
+        app_match = "streamlit_app.py" in text and (not root_text or root_text in text)
+        env_match = ENV_NAME.lower() in text and "streamlit" in text
+        if app_match or env_match:
+            matches.append(proc)
+    return matches
+
+
+def stop_streamlit_processes_with_powershell(project_root: Path | None = None, *, log=print) -> None:
+    env = os.environ.copy()
+    env["LOCAL_CUSTOMGUI_PROCESS_ROOT"] = str(project_root or "")
+    env["LOCAL_CUSTOMGUI_ENV_NAME"] = ENV_NAME
+    script = r"""
+$root = [string]$env:LOCAL_CUSTOMGUI_PROCESS_ROOT
+$envName = [string]$env:LOCAL_CUSTOMGUI_ENV_NAME
+$root = $root.ToLowerInvariant()
+$envName = $envName.ToLowerInvariant()
+$matched = 0
+Get-CimInstance Win32_Process | ForEach-Object {
+    $cmd = [string]$_.CommandLine
+    $exe = [string]$_.ExecutablePath
+    $text = ($cmd + " " + $exe).ToLowerInvariant()
+    $appMatch = $text.Contains("streamlit_app.py") -and (($root.Length -eq 0) -or $text.Contains($root))
+    $envMatch = ($envName.Length -gt 0) -and $text.Contains($envName) -and $text.Contains("streamlit")
+    if (($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
+        $matched += 1
+        Write-Output ("[STOPPING] Background Streamlit process PID " + $_.ProcessId)
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+if ($matched -eq 0) {
+    Write-Output "[OK] No background Streamlit server was found."
+} else {
+    Write-Output "[DONE] Background Streamlit cleanup completed."
+}
+"""
+    proc = subprocess.run(
+        [find_powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
+        creationflags=creation_flags(),
+    )
+    output = proc.stdout.strip()
+    if output:
+        for line in output.splitlines():
+            log(line.rstrip())
+    if proc.returncode != 0:
+        log("[WARN] PowerShell Streamlit cleanup did not complete cleanly.")
+
+
+def stop_external_streamlit_processes(project_root: Path | None = None, *, log=print) -> None:
+    if psutil is None:
+        stop_streamlit_processes_with_powershell(project_root, log=log)
+        return
+    procs = local_streamlit_processes(project_root)
+    if not procs:
+        log("[OK] No background Streamlit server was found.")
+        return
+    for proc in procs:
+        try:
+            log(f"[STOPPING] Background Streamlit process PID {proc.pid}")
+            proc.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    _, alive = psutil.wait_procs(procs, timeout=8)
+    for proc in alive:
+        try:
+            log(f"[KILL] Background Streamlit process PID {proc.pid}")
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if alive:
+        psutil.wait_procs(alive, timeout=5)
+    log("[DONE] Background Streamlit cleanup completed.")
+
+
 def conda_env_exists(conda_exe: Path | None) -> bool:
     if not conda_exe:
         return False
@@ -287,6 +404,15 @@ def ollama_model_exists(ollama_exe: Path | None, model: str | None = None) -> bo
 
 def existing_ollama_models(ollama_exe: Path | None) -> list[str]:
     return [model for model in OLLAMA_MODELS if ollama_model_exists(ollama_exe, model)]
+
+
+def stop_ollama_model(ollama_exe: Path | None, model: str, *, log=print) -> None:
+    if not ollama_exe:
+        return
+    model = normalize_ollama_model(model)
+    code, _ = run_quiet([str(ollama_exe), "stop", model])
+    if code == 0:
+        log(f"[DONE] Ollama model stopped: {model}")
 
 
 def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
@@ -347,10 +473,25 @@ def ensure_ollama(*, log=print) -> Path | None:
     return None
 
 
+def accept_conda_tos(conda_exe: Path, *, log=print) -> None:
+    for channel in CONDA_TOS_CHANNELS:
+        code, output = run_quiet([str(conda_exe), "tos", "accept", "--override-channels", "--channel", channel])
+        if code == 0:
+            log(f"[OK] Conda ToS accepted: {channel}")
+            continue
+        lowered = output.lower()
+        if "invalid choice" in lowered or "no such command" in lowered:
+            log("[INFO] Conda ToS command is unavailable; skipping.")
+            return
+        if "already accepted" in lowered:
+            log(f"[OK] Conda ToS already accepted: {channel}")
+
+
 def ensure_conda_env(conda_exe: Path, *, log=print) -> None:
     if conda_env_exists(conda_exe):
         log(f"[OK] Conda env exists: {ENV_NAME}")
         return
+    accept_conda_tos(conda_exe, log=log)
     run_live(
         [
             str(conda_exe),
@@ -614,8 +755,8 @@ class ManagerApp:
         self.messagebox = tk_messagebox
         self.root = tk.Tk()
         self.root.title("AIM4LAB LocalCustomGUI Manager")
-        self.root.geometry("900x680")
-        self.root.minsize(820, 600)
+        self.root.geometry("800x800")
+        self.root.minsize(760, 760)
         self.root.configure(bg="#f4f6f8")
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.busy = False
@@ -641,9 +782,9 @@ class ManagerApp:
                 continue
         style.configure("TFrame", background="#f4f6f8")
         style.configure("Header.TFrame", background="#ffffff")
-        style.configure("TLabel", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 10))
-        style.configure("HeaderTitle.TLabel", background="#ffffff", foreground="#111827", font=("Segoe UI", 18, "bold"))
-        style.configure("HeaderSub.TLabel", background="#ffffff", foreground="#6b7280", font=("Segoe UI", 10))
+        style.configure("TLabel", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 9))
+        style.configure("HeaderTitle.TLabel", background="#ffffff", foreground="#111827", font=("Segoe UI", 16, "bold"))
+        style.configure("HeaderSub.TLabel", background="#ffffff", foreground="#6b7280", font=("Segoe UI", 9))
         style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), padding=(18, 9))
         style.configure("TButton", font=("Segoe UI", 10), padding=(14, 8))
         style.configure("TCheckbutton", background="#f4f6f8", foreground="#1f2937", font=("Segoe UI", 10))
@@ -654,7 +795,7 @@ class ManagerApp:
     def _build_layout(self, scrolled_text_class) -> None:
         tk = self.tk
         ttk = self.ttk
-        header = ttk.Frame(self.root, style="Header.TFrame", padding=(22, 18))
+        header = ttk.Frame(self.root, style="Header.TFrame", padding=(16, 10))
         header.pack(fill="x")
         logo_path = resource_path("Logo", "logo_aim4lab.png")
         icon_path = resource_path("Icon", "aim4lab_app_icon.png")
@@ -670,7 +811,7 @@ class ManagerApp:
         if logo_path.exists():
             try:
                 self.logo_image = tk.PhotoImage(file=str(logo_path))
-                factor = max(1, self.logo_image.width() // 190)
+                factor = max(1, self.logo_image.width() // 90)
                 self.logo_display = self.logo_image.subsample(factor, factor)
                 logo_label = tk.Label(header, image=self.logo_display, bg="#ffffff", borderwidth=0)
                 logo_label.pack(side="left", padx=(0, 22))
@@ -690,14 +831,15 @@ class ManagerApp:
         ttk.Label(header_actions, textvariable=self.status_var, style="HeaderSub.TLabel").pack(anchor="e")
         ttk.Button(header_actions, text="GitHub", command=lambda: webbrowser.open(GITHUB_URL)).pack(anchor="e", pady=(8, 0))
 
-        body = ttk.Frame(self.root, padding=(18, 16))
+        body = ttk.Frame(self.root, padding=(14, 12))
         body.pack(fill="both", expand=True)
         self.notebook = ttk.Notebook(body)
-        self.notebook.pack(fill="both", expand=True)
+        self.notebook.configure(height=382)
+        self.notebook.pack(fill="x", expand=False)
 
-        self.install_tab = ttk.Frame(self.notebook, padding=18)
-        self.run_tab = ttk.Frame(self.notebook, padding=18)
-        self.uninstall_tab = ttk.Frame(self.notebook, padding=18)
+        self.install_tab = ttk.Frame(self.notebook, padding=14)
+        self.run_tab = ttk.Frame(self.notebook, padding=14)
+        self.uninstall_tab = ttk.Frame(self.notebook, padding=14)
         self.notebook.add(self.install_tab, text="Install")
         self.notebook.add(self.run_tab, text="Run")
         self.notebook.add(self.uninstall_tab, text="Uninstall")
@@ -707,8 +849,8 @@ class ManagerApp:
         self._build_uninstall_tab()
 
         log_frame = ttk.LabelFrame(body, text="Progress Log", padding=10)
-        log_frame.pack(fill="both", expand=False, pady=(14, 0))
-        self.log_text = scrolled_text_class(log_frame, height=10, wrap="word", font=("Consolas", 9))
+        log_frame.pack(fill="both", expand=True, pady=(14, 0))
+        self.log_text = scrolled_text_class(log_frame, height=7, wrap="word", font=("Consolas", 9))
         self.log_text.pack(fill="both", expand=True)
         self.log_text.configure(state="disabled")
         self.log("AIM4LAB LocalCustomGUI Manager is ready.")
@@ -716,7 +858,7 @@ class ManagerApp:
     def _build_install_tab(self) -> None:
         ttk = self.ttk
         tk = self.tk
-        info = ttk.LabelFrame(self.install_tab, text="Install Options", padding=14)
+        info = ttk.LabelFrame(self.install_tab, text="Install Options", padding=10)
         info.pack(fill="x")
         self.install_model_var = tk.BooleanVar(value=True)
         self.install_launch_var = tk.BooleanVar(value=True)
@@ -750,13 +892,13 @@ class ManagerApp:
         )
         ttk.Checkbutton(info, text="Launch Streamlit after install", variable=self.install_launch_var).pack(anchor="w", pady=2)
         buttons = ttk.Frame(self.install_tab)
-        buttons.pack(fill="x", pady=(16, 8))
+        buttons.pack(fill="x", pady=(12, 6))
         self.install_button = ttk.Button(buttons, text="Install / Repair", style="Accent.TButton", command=self.start_install)
         self.install_button.pack(side="left")
         ttk.Button(buttons, text="Open Project Folder", command=self.open_project_folder).pack(side="left", padx=(10, 0))
         self.progress_var = tk.DoubleVar(value=0)
         self.step_var = tk.StringVar(value="Waiting to start.")
-        ttk.Label(self.install_tab, textvariable=self.step_var).pack(anchor="w", pady=(14, 4))
+        ttk.Label(self.install_tab, textvariable=self.step_var).pack(anchor="w", pady=(10, 3))
         self.progress = ttk.Progressbar(
             self.install_tab,
             variable=self.progress_var,
@@ -765,11 +907,6 @@ class ManagerApp:
             style="Horizontal.TProgressbar",
         )
         self.progress.pack(fill="x")
-        note = (
-            "The manager checks Miniconda and Ollama, creates the conda env, installs Python packages, "
-            "prepares Streamlit settings, and can launch the app."
-        )
-        ttk.Label(self.install_tab, text=note, wraplength=780, foreground="#6b7280").pack(anchor="w", pady=(18, 0))
 
     def _build_run_tab(self) -> None:
         ttk = self.ttk
@@ -1171,10 +1308,12 @@ class ManagerApp:
         self.log("=== Uninstall Selected ===")
         self.stop_streamlit()
         project_root = find_project_root()
+        stop_external_streamlit_processes(project_root, log=self.log)
         conda_exe = find_conda_exe()
         ollama_exe = find_ollama_exe()
         if "conda_env" in keys:
             if conda_exe and conda_env_exists(conda_exe):
+                accept_conda_tos(conda_exe, log=self.log)
                 run_live([str(conda_exe), "env", "remove", "-y", "-n", ENV_NAME], log=self.log)
             else:
                 self.log(f"[SKIP] Conda env is missing: {ENV_NAME}")
@@ -1182,6 +1321,7 @@ class ManagerApp:
             removed_any = False
             for model in OLLAMA_MODELS:
                 if ollama_exe and ollama_model_exists(ollama_exe, model):
+                    stop_ollama_model(ollama_exe, model, log=self.log)
                     run_live([str(ollama_exe), "rm", model], log=self.log)
                     removed_any = True
             if not removed_any:

@@ -8,12 +8,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    import psutil
+except ImportError:  # pragma: no cover - bundled exe includes psutil, source mode may not.
+    psutil = None
+
 
 ENV_NAME = "local_customgui_windows"
 OLLAMA_MODEL_E2B = "gemma4:e2b"
 OLLAMA_MODEL_E4B = "gemma4:e4b"
 OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
 OLLAMA_MODEL = OLLAMA_MODEL_E4B
+CONDA_TOS_CHANNELS = (
+    "https://repo.anaconda.com/pkgs/main",
+    "https://repo.anaconda.com/pkgs/r",
+    "https://repo.anaconda.com/pkgs/msys2",
+)
 
 
 def say(message: str = "") -> None:
@@ -95,8 +105,28 @@ def find_ollama_exe() -> Path | None:
     return None
 
 
+def find_powershell_exe() -> str:
+    found = shutil.which("powershell.exe") or shutil.which("powershell")
+    if found:
+        return found
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        if candidate.exists():
+            return str(candidate)
+    return "powershell.exe"
+
+
 def run_quiet(cmd: list[str]) -> tuple[int, str]:
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, check=False)
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     return int(proc.returncode), proc.stdout
 
 
@@ -108,6 +138,112 @@ def run_checked(cmd: list[str]) -> None:
     if return_code != 0:
         raise RuntimeError(f"Command failed(returncode={return_code}): {' '.join(cmd)}")
     say("[DONE] Command completed")
+
+
+def local_streamlit_processes(project_root: Path | None = None) -> list[object]:
+    if psutil is None:
+        return []
+    root_text = ""
+    if project_root:
+        try:
+            root_text = str(project_root.resolve()).lower()
+        except OSError:
+            root_text = str(project_root).lower()
+    matches: list[object] = []
+    current_pid = os.getpid()
+    for proc in psutil.process_iter(["pid", "name", "exe", "cmdline", "cwd"]):
+        try:
+            info = proc.as_dict(attrs=["pid", "name", "exe", "cmdline", "cwd"], ad_value="")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+        if info.get("pid") == current_pid:
+            continue
+        cmdline = info.get("cmdline") or []
+        text = " ".join(
+            [
+                str(info.get("name") or ""),
+                str(info.get("exe") or ""),
+                str(info.get("cwd") or ""),
+                " ".join(str(part) for part in cmdline),
+            ]
+        ).lower()
+        app_match = "streamlit_app.py" in text and (not root_text or root_text in text)
+        env_match = ENV_NAME.lower() in text and "streamlit" in text
+        if app_match or env_match:
+            matches.append(proc)
+    return matches
+
+
+def stop_streamlit_processes_with_powershell(project_root: Path | None = None) -> None:
+    env = os.environ.copy()
+    env["LOCAL_CUSTOMGUI_PROCESS_ROOT"] = str(project_root or "")
+    env["LOCAL_CUSTOMGUI_ENV_NAME"] = ENV_NAME
+    script = r"""
+$root = [string]$env:LOCAL_CUSTOMGUI_PROCESS_ROOT
+$envName = [string]$env:LOCAL_CUSTOMGUI_ENV_NAME
+$root = $root.ToLowerInvariant()
+$envName = $envName.ToLowerInvariant()
+$matched = 0
+Get-CimInstance Win32_Process | ForEach-Object {
+    $cmd = [string]$_.CommandLine
+    $exe = [string]$_.ExecutablePath
+    $text = ($cmd + " " + $exe).ToLowerInvariant()
+    $appMatch = $text.Contains("streamlit_app.py") -and (($root.Length -eq 0) -or $text.Contains($root))
+    $envMatch = ($envName.Length -gt 0) -and $text.Contains($envName) -and $text.Contains("streamlit")
+    if (($appMatch -or $envMatch) -and ($_.ProcessId -ne $PID)) {
+        $matched += 1
+        Write-Output ("[STOPPING] Background Streamlit process PID " + $_.ProcessId)
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+if ($matched -eq 0) {
+    Write-Output "[OK] No background Streamlit server was found."
+} else {
+    Write-Output "[DONE] Background Streamlit cleanup completed."
+}
+"""
+    proc = subprocess.run(
+        [find_powershell_exe(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=env,
+    )
+    output = proc.stdout.strip()
+    if output:
+        for line in output.splitlines():
+            say(line.rstrip())
+    if proc.returncode != 0:
+        say("[WARN] PowerShell Streamlit cleanup did not complete cleanly.")
+
+
+def stop_external_streamlit_processes(project_root: Path | None = None) -> None:
+    if psutil is None:
+        stop_streamlit_processes_with_powershell(project_root)
+        return
+    procs = local_streamlit_processes(project_root)
+    if not procs:
+        say("[OK] No background Streamlit server was found.")
+        return
+    for proc in procs:
+        try:
+            say(f"[STOPPING] Background Streamlit process PID {proc.pid}")
+            proc.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    _, alive = psutil.wait_procs(procs, timeout=8)
+    for proc in alive:
+        try:
+            say(f"[KILL] Background Streamlit process PID {proc.pid}")
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if alive:
+        psutil.wait_procs(alive, timeout=5)
+    say("[DONE] Background Streamlit cleanup completed.")
 
 
 def conda_env_exists(conda_exe: Path | None) -> bool:
@@ -138,6 +274,29 @@ def ollama_model_exists(ollama_exe: Path | None, model: str | None = None) -> bo
 
 def existing_ollama_models(ollama_exe: Path | None) -> list[str]:
     return [model for model in OLLAMA_MODELS if ollama_model_exists(ollama_exe, model)]
+
+
+def stop_ollama_model(ollama_exe: Path | None, model: str) -> None:
+    if not ollama_exe:
+        return
+    model = normalize_ollama_model(model)
+    code, _ = run_quiet([str(ollama_exe), "stop", model])
+    if code == 0:
+        say(f"[DONE] Ollama model stopped: {model}")
+
+
+def accept_conda_tos(conda_exe: Path) -> None:
+    for channel in CONDA_TOS_CHANNELS:
+        code, output = run_quiet([str(conda_exe), "tos", "accept", "--override-channels", "--channel", channel])
+        if code == 0:
+            say(f"[OK] Conda ToS accepted: {channel}")
+            continue
+        lowered = output.lower()
+        if "invalid choice" in lowered or "no such command" in lowered:
+            say("[INFO] Conda ToS command is unavailable; skipping.")
+            return
+        if "already accepted" in lowered:
+            say(f"[OK] Conda ToS already accepted: {channel}")
 
 
 def is_under(path: Path, root: Path) -> bool:
@@ -217,6 +376,8 @@ def delete_conda_env(conda_exe: Path | None) -> None:
     if not conda_env_exists(conda_exe):
         say(f"[SKIP] Conda env is missing: {ENV_NAME}")
         return
+    stop_external_streamlit_processes(find_project_root())
+    accept_conda_tos(conda_exe)
     run_checked([str(conda_exe), "env", "remove", "-y", "-n", ENV_NAME])
 
 
@@ -229,6 +390,7 @@ def delete_ollama_models(ollama_exe: Path | None) -> None:
         say(f"[SKIP] Ollama models are missing or Ollama is not running: {' / '.join(OLLAMA_MODELS)}")
         return
     for model in models:
+        stop_ollama_model(ollama_exe, model)
         run_checked([str(ollama_exe), "rm", model])
 
 
@@ -368,6 +530,11 @@ def confirm_or_exit(yes: bool) -> bool:
     return input("> ").strip() == "DELETE"
 
 
+def pause_before_exit(args: argparse.Namespace) -> None:
+    if args.select is None and not args.yes and not args.dry_run:
+        input("Press Enter to exit...")
+
+
 def main() -> int:
     banner("LocalCustomGUI Windows Delete Tool")
     parser = argparse.ArgumentParser(description="Delete selected LocalCustomGUI Windows install/runtime items.")
@@ -390,12 +557,12 @@ def main() -> int:
         ids = parse_selection(raw_selection, items)
         if not ids:
             say("[CANCELLED] Nothing selected.")
-            input("Press Enter to exit...")
+            pause_before_exit(args)
             return 0
         chosen = selected_items(items, ids)
         if not chosen:
             say("[CANCELLED] Selected items were missing.")
-            input("Press Enter to exit...")
+            pause_before_exit(args)
             return 0
         show_preview(chosen)
         if args.dry_run:
@@ -404,19 +571,19 @@ def main() -> int:
             return 0
         if not confirm_or_exit(args.yes):
             say("[CANCELLED] Delete cancelled.")
-            input("Press Enter to exit...")
+            pause_before_exit(args)
             return 0
         for item in chosen:
             delete_func = item["delete"]
             delete_func()  # type: ignore[operator]
         say("")
         say("[DONE] Selected cleanup completed.")
-        input("Press Enter to exit...")
+        pause_before_exit(args)
         return 0
     except Exception as exc:
         say("")
         say(f"[ERROR] {exc}")
-        input("Press Enter to exit...")
+        pause_before_exit(args)
         return 1
 
 
