@@ -3155,18 +3155,55 @@ def save_report_markdown(task: str, model_id: str, content: str) -> Path:
     return path
 
 
+PDF_FONT_CANDIDATES = {
+    "regular": [
+        Path("C:/Windows/Fonts/malgun.ttf"),
+        Path("C:/Windows/Fonts/NotoSansKR-VF.ttf"),
+        Path("C:/Windows/Fonts/NanumGothic.ttf"),
+        Path("C:/Windows/Fonts/Hancom Gothic Regular.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
+    ],
+    "bold": [
+        Path("C:/Windows/Fonts/malgunbd.ttf"),
+        Path("C:/Windows/Fonts/NotoSansKR-VF.ttf"),
+        Path("C:/Windows/Fonts/NanumGothicBold.ttf"),
+        Path("C:/Windows/Fonts/Hancom Gothic Bold.ttf"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"),
+        Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
+        Path("/System/Library/Fonts/AppleSDGothicNeo.ttc"),
+    ],
+}
+
+
+def _pdf_font_path(path_hint: str = "regular") -> Path | None:
+    paths = PDF_FONT_CANDIDATES.get(path_hint) or PDF_FONT_CANDIDATES["regular"]
+    for path in paths:
+        if path.exists():
+            return path
+    if path_hint != "regular":
+        return _pdf_font_path("regular")
+    return None
+
+
+def _configure_pdf_output() -> None:
+    if plt is None:
+        return
+    plt.rcParams["pdf.fonttype"] = 42
+    plt.rcParams["ps.fonttype"] = 42
+    plt.rcParams["pdf.use14corefonts"] = False
+    plt.rcParams["axes.unicode_minus"] = False
+
+
 def _pdf_font(path_hint: str = "regular", size: float = 10) -> Any:
     if FontProperties is None:
         return None
-    candidates = (
-        ["/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"]
-        if path_hint == "bold"
-        else ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"]
-    )
-    for candidate in candidates:
-        path = Path(candidate)
-        if path.exists():
-            return FontProperties(fname=str(path), size=size)
+    font_path = _pdf_font_path(path_hint)
+    if font_path is not None:
+        return FontProperties(fname=str(font_path), size=size)
     if findfont is not None:
         try:
             return FontProperties(fname=findfont("DejaVu Sans"), size=size)
@@ -3558,6 +3595,7 @@ def save_report_pdf(
 ) -> Path | None:
     if plt is None or PdfPages is None:
         return None
+    _configure_pdf_output()
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     pdf_path = REPORTS_DIR / f"{timestamp}_{task}_{_safe_state_filename(model_id)}_report.pdf"

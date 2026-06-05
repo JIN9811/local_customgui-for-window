@@ -40,7 +40,7 @@
 - [예시 PDF 리포트](../assets/examples/classification_report_example.pdf)
 - [예시 Markdown 리포트](../assets/examples/classification_report_example.md)
 
-예시 리포트는 `classification / 20260604_224339` 모델 기준으로 생성된 산출물입니다. 실제 사용 시 파일명은 생성 시각, task, model_id에 따라 달라집니다.
+예시 리포트는 `classification / latest` 모델 기준으로 생성된 산출물입니다. PDF에는 Windows 한글 폰트가 포함되어 GitHub와 로컬 PDF 뷰어에서 한글이 깨지지 않도록 구성했습니다. 실제 사용 시 파일명은 생성 시각, task, model_id에 따라 달라집니다.
 
 ## 저장 위치
 

@@ -185,9 +185,14 @@ LLM 연결이 실패해도 Excel 업로드, 모델 학습, 저장 모델 예측,
 
 다운로드 기능:
 
-1. `PDF 다운로드`로 공유용 리포트 파일을 받습니다.
+1. `PDF 다운로드`로 Windows 한글 폰트가 포함된 공유용 리포트 파일을 받습니다.
 2. `Markdown 다운로드`로 편집 가능한 문서 원문을 받습니다.
 3. 다운로드 버튼 아래 저장 경로에서 생성된 파일 위치를 확인합니다.
+
+예시 산출물:
+
+- [예시 PDF 리포트](docs/assets/examples/classification_report_example.pdf)
+- [예시 Markdown 리포트](docs/assets/examples/classification_report_example.md)
 
 ### 채팅으로 요청하기
 
