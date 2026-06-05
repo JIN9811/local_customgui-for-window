@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import json
 import os
 import shutil
 import subprocess
@@ -13,7 +15,10 @@ from pathlib import Path
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e4b"
+OLLAMA_MODEL_E2B = "gemma4:e2b"
+OLLAMA_MODEL_E4B = "gemma4:e4b"
+OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
+OLLAMA_MODEL = OLLAMA_MODEL_E4B
 PORT = "8791"
 TOTAL_STEPS = 9
 
@@ -47,6 +52,48 @@ def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
         except (OSError, urllib.error.URLError):
             time.sleep(1)
     return False
+
+
+def normalize_ollama_model(model: str | None) -> str:
+    value = str(model or "").strip()
+    return value if value in OLLAMA_MODELS else OLLAMA_MODEL
+
+
+def installed_ram_gb() -> float | None:
+    if os.name == "nt":
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+            return float(status.ullTotalPhys) / (1024**3)
+        return None
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            return float(pages * page_size) / (1024**3)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def recommended_ollama_model() -> str:
+    ram_gb = installed_ram_gb()
+    if ram_gb is not None and ram_gb < 31:
+        return OLLAMA_MODEL_E2B
+    return OLLAMA_MODEL_E4B
 
 
 def exe_dir() -> Path:
@@ -217,6 +264,50 @@ def ensure_env_file(project_root: Path) -> None:
         env_file.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
 
 
+def set_env_ollama_model(project_root: Path, model: str) -> None:
+    model = normalize_ollama_model(model)
+    ensure_env_file(project_root)
+    env_file = project_root / ".env"
+    lines: list[str] = []
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    found = False
+    for index, line in enumerate(lines):
+        if line.strip().startswith("OLLAMA_MODEL="):
+            lines[index] = f"OLLAMA_MODEL={model}"
+            found = True
+            break
+    if not found:
+        lines.append(f"OLLAMA_MODEL={model}")
+    env_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def set_config_ollama_model(project_root: Path, model: str) -> None:
+    model = normalize_ollama_model(model)
+    config_path = project_root / "config.json"
+    raw: dict[str, object] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                raw = loaded
+        except Exception:
+            raw = {}
+    raw["default_backend"] = "ollama"
+    ollama_cfg = raw.get("ollama") if isinstance(raw.get("ollama"), dict) else {}
+    ollama_cfg = dict(ollama_cfg)
+    ollama_cfg.setdefault("base_url", "http://127.0.0.1:11434")
+    ollama_cfg["model"] = model
+    ollama_cfg.setdefault("num_ctx", 16384)
+    raw["ollama"] = ollama_cfg
+    config_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def set_default_ollama_model(project_root: Path, model: str) -> None:
+    set_env_ollama_model(project_root, model)
+    set_config_ollama_model(project_root, model)
+
+
 def ensure_streamlit_config() -> None:
     user_profile = os.environ.get("USERPROFILE")
     if not user_profile:
@@ -233,7 +324,8 @@ def ensure_streamlit_config() -> None:
     )
 
 
-def ensure_ollama_model(ollama_exe: Path | None) -> None:
+def ensure_ollama_model(ollama_exe: Path | None, model: str) -> None:
+    model = normalize_ollama_model(model)
     if not ollama_exe:
         say("[WARN] Ollama 실행 파일이 없어 모델 다운로드를 건너뜁니다.")
         return
@@ -241,7 +333,7 @@ def ensure_ollama_model(ollama_exe: Path | None) -> None:
         say("[RUNNING] Ollama 서버를 시작합니다.")
         subprocess.Popen([str(ollama_exe), "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(5)
-    run_checked([str(ollama_exe), "pull", OLLAMA_MODEL])
+    run_checked([str(ollama_exe), "pull", model])
 
 
 def launch_streamlit(conda_exe: Path, project_root: Path) -> int:
@@ -295,7 +387,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print detected paths without installing.")
     parser.add_argument("--no-launch", action="store_true", help="Install only; do not launch Streamlit.")
     parser.add_argument("--skip-model", action="store_true", help="Skip ollama pull.")
+    parser.add_argument("--ollama-model", choices=OLLAMA_MODELS, help="Ollama model to install and set as the app default.")
     args = parser.parse_args()
+    ollama_model = normalize_ollama_model(args.ollama_model or recommended_ollama_model())
 
     try:
         step(1, "프로젝트/설치 경로 확인")
@@ -305,6 +399,11 @@ def main() -> int:
         ollama_exe = find_ollama_exe()
         say(f"[INFO] Conda: {conda_exe or 'not found'}")
         say(f"[INFO] Ollama: {ollama_exe or 'not found'}")
+        ram_gb = installed_ram_gb()
+        say(f"[INFO] Selected Ollama model: {ollama_model}")
+        say(f"[INFO] RAM recommendation: 16 GB -> {OLLAMA_MODEL_E2B}, 32 GB-class or more -> {OLLAMA_MODEL_E4B}")
+        if ram_gb is not None:
+            say(f"[INFO] Detected RAM: {ram_gb:.0f} GB")
         done("경로 확인 완료")
         if args.dry_run:
             return 0
@@ -321,15 +420,15 @@ def main() -> int:
         step(5, "Python 패키지와 PyCaret 설치")
         install_python_deps(conda_exe, project_root)
         done("Python 패키지 설치 완료")
-        step(6, ".env 파일 준비")
-        ensure_env_file(project_root)
-        done(".env 준비 완료")
+        step(6, f"앱 기본 모델 설정: {ollama_model}")
+        set_default_ollama_model(project_root, ollama_model)
+        done("앱 기본 모델 설정 완료")
         step(7, "Streamlit 첫 실행 설정 준비")
         ensure_streamlit_config()
         done("Streamlit 설정 준비 완료")
         if not args.skip_model:
-            step(8, f"Ollama 모델 다운로드/확인: {OLLAMA_MODEL}")
-            ensure_ollama_model(ollama_exe)
+            step(8, f"Ollama 모델 다운로드/확인: {ollama_model}")
+            ensure_ollama_model(ollama_exe, ollama_model)
             done("Ollama 모델 준비 완료")
         else:
             step(8, "Ollama 모델 다운로드 건너뜀")

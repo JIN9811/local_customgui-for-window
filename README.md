@@ -58,12 +58,15 @@
 
 설치 단계:
 
-1. `Download or verify Ollama model`을 켜 둡니다.
-   기본 모델은 `gemma4:e4b`입니다.
-2. 설치가 끝나자마자 앱을 열고 싶으면 `Launch Streamlit after install`을 켜 둡니다.
-3. `Install / Repair`를 누릅니다.
-4. Manager가 Miniconda, Ollama, conda 환경, Python 패키지, Streamlit 설정, Ollama 모델을 순서대로 확인하고 준비합니다.
-5. 설치가 끝나면 Windows `프로그램 추가/제거`에 `AIM4LAB LocalCustomGUI`가 등록됩니다.
+1. Ollama 모델을 선택합니다.
+   - RAM 16GB PC: `gemma4:e2b` 권장
+   - RAM 32GB 이상 PC: `gemma4:e4b` 권장
+2. `Download or verify the selected Ollama model`을 켜 둡니다.
+3. 설치가 끝나자마자 앱을 열고 싶으면 `Launch Streamlit after install`을 켜 둡니다.
+4. `Install / Repair`를 누릅니다.
+5. Manager가 Miniconda, Ollama, conda 환경, Python 패키지, Streamlit 설정, 선택한 Ollama 모델을 순서대로 확인하고 준비합니다.
+6. 선택한 모델은 설치 중 `.env`와 `config.json`에 저장되어 앱의 기본 모델로 사용됩니다.
+7. 설치가 끝나면 Windows `프로그램 추가/제거`에 `AIM4LAB LocalCustomGUI`가 등록됩니다.
 
 설치가 중간에 끊겼거나 다른 PC에서 다시 세팅할 때도 같은 버튼을 다시 누르면 됩니다. 이미 설치된 항목은 확인 후 건너뛰고, 부족한 항목만 보완합니다.
 
@@ -240,7 +243,7 @@ Manager의 `Uninstall` 탭에서 삭제할 항목을 선택합니다.
 기본 추천 삭제 항목:
 
 - conda 환경 `local_customgui_windows`
-- Ollama 모델 `gemma4:e4b`
+- Ollama 모델 `gemma4:e2b` / `gemma4:e4b`
 - runtime state, logs, caches
 - `.env`
 - Windows 프로그램 추가/제거 등록 항목
@@ -265,7 +268,7 @@ GitHub README에서 영상이 바로 재생되지 않으면 [튜토리얼 영상
 
 `conda` 명령이 PowerShell에서 인식되지 않아도 괜찮습니다. Manager는 일반적인 Miniconda 설치 경로에서 `conda.exe`를 직접 찾아 실행합니다.
 
-Ollama 모델 다운로드는 처음 한 번 오래 걸릴 수 있습니다. 모델 파일은 EXE 안에 들어있지 않고 Ollama 모델 저장소에 따로 저장됩니다.
+Ollama 모델 다운로드는 처음 한 번 오래 걸릴 수 있습니다. 모델 파일은 EXE 안에 들어있지 않고 Ollama 모델 저장소에 따로 저장됩니다. 일반적으로 RAM 32GB 이상 환경에서 `gemma4:e4b` 사용을 권장하며, RAM 16GB 환경에서는 `gemma4:e2b`가 더 안정적입니다.
 
 Streamlit이 이메일 입력을 묻는 경우 Manager 설치를 다시 실행하면 사용자 Streamlit 설정이 준비됩니다. 수동 실행 시에는 [수동 설치 문서](docs/manual_installation.md)의 실행 명령을 사용하세요.
 

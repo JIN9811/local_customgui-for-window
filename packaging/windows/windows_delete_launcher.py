@@ -10,7 +10,10 @@ from pathlib import Path
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e4b"
+OLLAMA_MODEL_E2B = "gemma4:e2b"
+OLLAMA_MODEL_E4B = "gemma4:e4b"
+OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
+OLLAMA_MODEL = OLLAMA_MODEL_E4B
 
 
 def say(message: str = "") -> None:
@@ -114,18 +117,27 @@ def conda_env_exists(conda_exe: Path | None) -> bool:
     return code == 0
 
 
-def ollama_model_exists(ollama_exe: Path | None) -> bool:
+def normalize_ollama_model(model: str | None) -> str:
+    value = str(model or "").strip()
+    return value if value in OLLAMA_MODELS else OLLAMA_MODEL
+
+
+def ollama_model_exists(ollama_exe: Path | None, model: str | None = None) -> bool:
     if not ollama_exe:
         return False
     code, output = run_quiet([str(ollama_exe), "list"])
     if code != 0:
         return False
-    model_name = OLLAMA_MODEL.lower()
+    model_name = normalize_ollama_model(model).lower()
     for line in output.splitlines()[1:]:
         columns = line.split()
         if columns and columns[0].lower() == model_name:
             return True
     return False
+
+
+def existing_ollama_models(ollama_exe: Path | None) -> list[str]:
+    return [model for model in OLLAMA_MODELS if ollama_model_exists(ollama_exe, model)]
 
 
 def is_under(path: Path, root: Path) -> bool:
@@ -208,14 +220,16 @@ def delete_conda_env(conda_exe: Path | None) -> None:
     run_checked([str(conda_exe), "env", "remove", "-y", "-n", ENV_NAME])
 
 
-def delete_ollama_model(ollama_exe: Path | None) -> None:
+def delete_ollama_models(ollama_exe: Path | None) -> None:
     if not ollama_exe:
         say("[SKIP] ollama.exe was not found.")
         return
-    if not ollama_model_exists(ollama_exe):
-        say(f"[SKIP] Ollama model is missing or Ollama is not running: {OLLAMA_MODEL}")
+    models = existing_ollama_models(ollama_exe)
+    if not models:
+        say(f"[SKIP] Ollama models are missing or Ollama is not running: {' / '.join(OLLAMA_MODELS)}")
         return
-    run_checked([str(ollama_exe), "rm", OLLAMA_MODEL])
+    for model in models:
+        run_checked([str(ollama_exe), "rm", model])
 
 
 def delete_project_paths(project_root: Path | None, targets: list[Path]) -> None:
@@ -252,10 +266,10 @@ def build_items(project_root: Path | None, conda_exe: Path | None, ollama_exe: P
         },
         {
             "id": "2",
-            "title": f"Ollama model: {OLLAMA_MODEL}",
-            "available": ollama_model_exists(ollama_exe),
-            "preview": [f"ollama rm {OLLAMA_MODEL}"],
-            "delete": lambda: delete_ollama_model(ollama_exe),
+            "title": f"Ollama models: {' / '.join(OLLAMA_MODELS)}",
+            "available": bool(existing_ollama_models(ollama_exe)),
+            "preview": [f"ollama rm {model}" for model in OLLAMA_MODELS],
+            "delete": lambda: delete_ollama_models(ollama_exe),
         },
         {
             "id": "3",

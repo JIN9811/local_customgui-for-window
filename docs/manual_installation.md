@@ -11,6 +11,11 @@ $ErrorActionPreference = "Stop"
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $EnvName = "local_customgui_windows"
+$TotalRamGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+$OllamaModel = if ($TotalRamGB -ge 31) { "gemma4:e4b" } else { "gemma4:e2b" }
+Write-Host "Detected RAM: $TotalRamGB GB"
+Write-Host "Selected Ollama model: $OllamaModel"
+Write-Host "Recommendation: 16GB RAM -> gemma4:e2b, 32GB-class+ RAM -> gemma4:e4b"
 
 function Invoke-Checked {
   $FilePath = $args[0]
@@ -67,6 +72,26 @@ Invoke-Checked $CondaExe run -n $EnvName python -m pip install -e .
 if (-not (Test-Path ".\.env")) {
   Copy-Item ".\.env.example" ".\.env"
 }
+$EnvContent = Get-Content ".\.env" -ErrorAction SilentlyContinue
+if ($EnvContent -match "^OLLAMA_MODEL=") {
+  $EnvContent = $EnvContent | ForEach-Object { if ($_ -match "^OLLAMA_MODEL=") { "OLLAMA_MODEL=$OllamaModel" } else { $_ } }
+} else {
+  $EnvContent = @($EnvContent) + "OLLAMA_MODEL=$OllamaModel"
+}
+$EnvContent | Set-Content ".\.env" -Encoding UTF8
+
+$ConfigPath = ".\config.json"
+$Config = if (Test-Path $ConfigPath) { Get-Content $ConfigPath -Raw | ConvertFrom-Json } else { "{}" | ConvertFrom-Json }
+$Config | Add-Member -Force -MemberType NoteProperty -Name "default_backend" -Value "ollama"
+if (-not $Config.PSObject.Properties["ollama"]) {
+  $Config | Add-Member -Force -MemberType NoteProperty -Name "ollama" -Value ([pscustomobject]@{})
+}
+$Config.ollama | Add-Member -Force -MemberType NoteProperty -Name "base_url" -Value "http://127.0.0.1:11434"
+$Config.ollama | Add-Member -Force -MemberType NoteProperty -Name "model" -Value $OllamaModel
+if (-not $Config.ollama.PSObject.Properties["num_ctx"]) {
+  $Config.ollama | Add-Member -Force -MemberType NoteProperty -Name "num_ctx" -Value 16384
+}
+$Config | ConvertTo-Json -Depth 12 | Set-Content $ConfigPath -Encoding UTF8
 
 $OllamaExe = $null
 $OllamaCommand = Get-Command ollama -ErrorAction SilentlyContinue
@@ -86,7 +111,7 @@ if ($OllamaExe) {
     Start-Process -FilePath $OllamaExe -ArgumentList "serve" -WindowStyle Hidden
     Start-Sleep -Seconds 5
   }
-  Invoke-Checked $OllamaExe pull gemma4:e4b
+  Invoke-Checked $OllamaExe pull $OllamaModel
 } else {
   Write-Warning "Ollama 실행 파일을 찾지 못했습니다. 앱은 실행되지만 LLM 연결에는 Ollama 설치와 모델 다운로드가 필요합니다."
 }
@@ -177,7 +202,10 @@ LocalCustomGUI-Manager.exe --uninstall
 ```bash
 LLM_PROVIDER=ollama
 OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=gemma4:e4b
+# RAM 16GB 권장
+OLLAMA_MODEL=gemma4:e2b
+# RAM 32GB 이상 권장
+# OLLAMA_MODEL=gemma4:e4b
 VLLM_BASE_URL=http://localhost:8000/v1
 VLLM_MODEL=local-model
 VLLM_API_KEY=EMPTY
@@ -186,6 +214,10 @@ VLLM_API_KEY=EMPTY
 Ollama 모델 수동 다운로드:
 
 ```powershell
+# RAM 16GB 권장
+ollama pull gemma4:e2b
+
+# RAM 32GB 이상 권장
 ollama pull gemma4:e4b
 ```
 

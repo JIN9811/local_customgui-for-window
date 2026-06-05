@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import json
 import os
 import queue
 import shutil
@@ -17,7 +19,10 @@ from tkinter import messagebox as tk_messagebox
 
 
 ENV_NAME = "local_customgui_windows"
-OLLAMA_MODEL = "gemma4:e4b"
+OLLAMA_MODEL_E2B = "gemma4:e2b"
+OLLAMA_MODEL_E4B = "gemma4:e4b"
+OLLAMA_MODELS = (OLLAMA_MODEL_E2B, OLLAMA_MODEL_E4B)
+OLLAMA_MODEL = OLLAMA_MODEL_E4B
 PORT = "8791"
 TOTAL_INSTALL_STEPS = 9
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -51,6 +56,56 @@ def resource_path(*parts: str) -> Path:
 
 def quote_windows_arg(value: str) -> str:
     return '"' + value.replace('"', r'\"') + '"'
+
+
+def normalize_ollama_model(model: str | None) -> str:
+    value = str(model or "").strip()
+    return value if value in OLLAMA_MODELS else OLLAMA_MODEL
+
+
+def installed_ram_gb() -> float | None:
+    if os.name == "nt":
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+            return float(status.ullTotalPhys) / (1024**3)
+        return None
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            return float(pages * page_size) / (1024**3)
+        except (OSError, ValueError):
+            return None
+    return None
+
+
+def recommended_ollama_model() -> str:
+    ram_gb = installed_ram_gb()
+    if ram_gb is not None and ram_gb < 31:
+        return OLLAMA_MODEL_E2B
+    return OLLAMA_MODEL_E4B
+
+
+def ram_recommendation_text() -> str:
+    ram_gb = installed_ram_gb()
+    detected = f"Detected RAM: {ram_gb:.0f} GB. " if ram_gb is not None else ""
+    selected = recommended_ollama_model()
+    reason = "16 GB -> e2b. 32 GB-class or more -> e4b."
+    return f"{detected}Recommended model: {selected}. {reason}"
 
 
 def manager_exe_for_registration(project_root: Path | None) -> Path:
@@ -192,18 +247,22 @@ def conda_env_exists(conda_exe: Path | None) -> bool:
     return code == 0
 
 
-def ollama_model_exists(ollama_exe: Path | None) -> bool:
+def ollama_model_exists(ollama_exe: Path | None, model: str | None = None) -> bool:
     if not ollama_exe:
         return False
     code, output = run_quiet([str(ollama_exe), "list"])
     if code != 0:
         return False
-    model_name = OLLAMA_MODEL.lower()
+    model_name = normalize_ollama_model(model).lower()
     for line in output.splitlines()[1:]:
         columns = line.split()
         if columns and columns[0].lower() == model_name:
             return True
     return False
+
+
+def existing_ollama_models(ollama_exe: Path | None) -> list[str]:
+    return [model for model in OLLAMA_MODELS if ollama_model_exists(ollama_exe, model)]
 
 
 def wait_for_server(url: str, *, timeout_sec: int = 45) -> bool:
@@ -306,6 +365,52 @@ def ensure_env_file(project_root: Path, *, log=print) -> None:
     log("[WARN] .env.example was not found. Skipping .env creation.")
 
 
+def set_env_ollama_model(project_root: Path, model: str, *, log=print) -> None:
+    model = normalize_ollama_model(model)
+    ensure_env_file(project_root, log=log)
+    env_file = project_root / ".env"
+    lines: list[str] = []
+    if env_file.exists():
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    found = False
+    for index, line in enumerate(lines):
+        if line.strip().startswith("OLLAMA_MODEL="):
+            lines[index] = f"OLLAMA_MODEL={model}"
+            found = True
+            break
+    if not found:
+        lines.append(f"OLLAMA_MODEL={model}")
+    env_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    log(f"[DONE] .env default Ollama model set: {model}")
+
+
+def set_config_ollama_model(project_root: Path, model: str, *, log=print) -> None:
+    model = normalize_ollama_model(model)
+    config_path = project_root / "config.json"
+    raw: dict[str, object] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                raw = loaded
+        except Exception as exc:
+            log(f"[WARN] Could not read config.json; rewriting minimal config: {exc}")
+    raw["default_backend"] = "ollama"
+    ollama_cfg = raw.get("ollama") if isinstance(raw.get("ollama"), dict) else {}
+    ollama_cfg = dict(ollama_cfg)
+    ollama_cfg.setdefault("base_url", "http://127.0.0.1:11434")
+    ollama_cfg["model"] = model
+    ollama_cfg.setdefault("num_ctx", 16384)
+    raw["ollama"] = ollama_cfg
+    config_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    log(f"[DONE] config.json default Ollama model set: {model}")
+
+
+def set_default_ollama_model(project_root: Path, model: str, *, log=print) -> None:
+    set_env_ollama_model(project_root, model, log=log)
+    set_config_ollama_model(project_root, model, log=log)
+
+
 def ensure_streamlit_config(*, log=print) -> None:
     user_profile = os.environ.get("USERPROFILE")
     if not user_profile:
@@ -325,12 +430,13 @@ def ensure_streamlit_config(*, log=print) -> None:
     log(f"[DONE] Streamlit user config ready: {target}")
 
 
-def ensure_ollama_model(ollama_exe: Path | None, *, log=print) -> None:
+def ensure_ollama_model(ollama_exe: Path | None, model: str, *, log=print) -> None:
+    model = normalize_ollama_model(model)
     if not ollama_exe:
         log("[WARN] ollama.exe was not found. Skipping model download.")
         return
-    if ollama_model_exists(ollama_exe):
-        log(f"[OK] Ollama model exists: {OLLAMA_MODEL}")
+    if ollama_model_exists(ollama_exe, model):
+        log(f"[OK] Ollama model exists: {model}")
         return
     if run_quiet([str(ollama_exe), "list"])[0] != 0:
         log("[RUNNING] Starting Ollama server.")
@@ -341,7 +447,7 @@ def ensure_ollama_model(ollama_exe: Path | None, *, log=print) -> None:
             creationflags=creation_flags(),
         )
         time.sleep(5)
-    run_live([str(ollama_exe), "pull", OLLAMA_MODEL], log=log)
+    run_live([str(ollama_exe), "pull", model], log=log)
 
 
 def is_under(path: Path, root: Path) -> bool:
@@ -590,7 +696,23 @@ class ManagerApp:
         info.pack(fill="x")
         self.install_model_var = tk.BooleanVar(value=True)
         self.install_launch_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(info, text=f"Download or verify Ollama model ({OLLAMA_MODEL})", variable=self.install_model_var).pack(
+        self.install_ollama_model_var = tk.StringVar(value=recommended_ollama_model())
+        ttk.Label(info, text=ram_recommendation_text(), wraplength=820, foreground="#374151").pack(anchor="w", pady=(0, 8))
+        model_box = ttk.Frame(info)
+        model_box.pack(fill="x", pady=(0, 6))
+        ttk.Radiobutton(
+            model_box,
+            text=f"{OLLAMA_MODEL_E2B} - recommended for 16 GB RAM PCs",
+            variable=self.install_ollama_model_var,
+            value=OLLAMA_MODEL_E2B,
+        ).pack(anchor="w", pady=1)
+        ttk.Radiobutton(
+            model_box,
+            text=f"{OLLAMA_MODEL_E4B} - better quality, 32 GB RAM or more recommended",
+            variable=self.install_ollama_model_var,
+            value=OLLAMA_MODEL_E4B,
+        ).pack(anchor="w", pady=1)
+        ttk.Checkbutton(info, text="Download or verify the selected Ollama model", variable=self.install_model_var).pack(
             anchor="w", pady=2
         )
         ttk.Checkbutton(info, text="Launch Streamlit after install", variable=self.install_launch_var).pack(anchor="w", pady=2)
@@ -648,7 +770,7 @@ class ManagerApp:
         box.pack(fill="x")
         for key, label in (
             ("conda_env", f"Conda env: {ENV_NAME}"),
-            ("ollama_model", f"Ollama model: {OLLAMA_MODEL}"),
+            ("ollama_model", f"Ollama models: {' / '.join(OLLAMA_MODELS)}"),
             ("runtime", "Runtime state, logs, and caches"),
             ("env_file", "Local app config: .env"),
             ("windows_uninstall_entry", "Windows Apps uninstall entry"),
@@ -746,11 +868,15 @@ class ManagerApp:
     def start_install(self) -> None:
         download_model = bool(self.install_model_var.get())
         launch_after = bool(self.install_launch_var.get())
-        self.start_task("Installing", lambda: self.install_flow(download_model, launch_after))
+        ollama_model = normalize_ollama_model(str(self.install_ollama_model_var.get()))
+        self.start_task("Installing", lambda: self.install_flow(download_model, launch_after, ollama_model))
 
-    def install_flow(self, download_model: bool, launch_after: bool) -> None:
+    def install_flow(self, download_model: bool, launch_after: bool, ollama_model: str) -> None:
+        ollama_model = normalize_ollama_model(ollama_model)
         self.log("")
         self.log("=== Install / Repair ===")
+        self.log(f"[INFO] Selected Ollama model: {ollama_model}")
+        self.log(f"[INFO] {ram_recommendation_text()}")
         self.set_step(1, "Checking project and install paths")
         project_root = require_project_root()
         self.log(f"[INFO] Project: {project_root}")
@@ -768,16 +894,16 @@ class ManagerApp:
         self.set_step(5, "Installing Python packages and PyCaret")
         install_python_deps(conda_exe, project_root, log=self.log)
 
-        self.set_step(6, "Preparing .env")
-        ensure_env_file(project_root, log=self.log)
+        self.set_step(6, f"Preparing app config: {ollama_model}")
+        set_default_ollama_model(project_root, ollama_model, log=self.log)
 
         self.set_step(7, "Preparing Streamlit user config")
         ensure_streamlit_config(log=self.log)
         register_windows_uninstaller(project_root, log=self.log)
 
-        self.set_step(8, f"Preparing Ollama model: {OLLAMA_MODEL}")
+        self.set_step(8, f"Preparing Ollama model: {ollama_model}")
         if download_model:
-            ensure_ollama_model(ollama_exe, log=self.log)
+            ensure_ollama_model(ollama_exe, ollama_model, log=self.log)
         else:
             self.log("[SKIP] Ollama model download was unchecked.")
 
@@ -901,7 +1027,7 @@ class ManagerApp:
         ollama_exe = find_ollama_exe()
         return {
             "conda_env": conda_env_exists(conda_exe),
-            "ollama_model": ollama_model_exists(ollama_exe),
+            "ollama_model": bool(existing_ollama_models(ollama_exe)),
             "runtime": bool(runtime_targets(project_root)),
             "env_file": bool(env_targets(project_root)),
             "windows_uninstall_entry": windows_uninstall_entry_exists(),
@@ -912,7 +1038,7 @@ class ManagerApp:
     def refresh_delete_options(self) -> None:
         labels = {
             "conda_env": f"Conda env: {ENV_NAME}",
-            "ollama_model": f"Ollama model: {OLLAMA_MODEL}",
+            "ollama_model": f"Ollama models: {' / '.join(OLLAMA_MODELS)}",
             "runtime": "Runtime state, logs, and caches",
             "env_file": "Local app config: .env",
             "windows_uninstall_entry": "Windows Apps uninstall entry",
@@ -957,7 +1083,7 @@ class ManagerApp:
         if "conda_env" in keys:
             lines.append(f"conda env remove -n {ENV_NAME}")
         if "ollama_model" in keys:
-            lines.append(f"ollama rm {OLLAMA_MODEL}")
+            lines.extend(f"ollama rm {model}" for model in OLLAMA_MODELS)
         if "runtime" in keys:
             lines.extend(str(path) for path in runtime_targets(project_root))
         if "env_file" in keys:
@@ -1008,10 +1134,13 @@ class ManagerApp:
             else:
                 self.log(f"[SKIP] Conda env is missing: {ENV_NAME}")
         if "ollama_model" in keys:
-            if ollama_exe and ollama_model_exists(ollama_exe):
-                run_live([str(ollama_exe), "rm", OLLAMA_MODEL], log=self.log)
-            else:
-                self.log(f"[SKIP] Ollama model is missing: {OLLAMA_MODEL}")
+            removed_any = False
+            for model in OLLAMA_MODELS:
+                if ollama_exe and ollama_model_exists(ollama_exe, model):
+                    run_live([str(ollama_exe), "rm", model], log=self.log)
+                    removed_any = True
+            if not removed_any:
+                self.log(f"[SKIP] Ollama models are missing: {' / '.join(OLLAMA_MODELS)}")
         if project_root:
             if "runtime" in keys:
                 for target in runtime_targets(project_root):
@@ -1162,7 +1291,8 @@ def self_test() -> int:
     print(f"app_icon={app_icon} exists={app_icon.exists()}")
     print(f"pystray={pystray_ok}")
     print(f"conda_env={conda_env_exists(conda_exe)}")
-    print(f"ollama_model={ollama_model_exists(ollama_exe)}")
+    for model in OLLAMA_MODELS:
+        print(f"ollama_model_{model}={ollama_model_exists(ollama_exe, model)}")
     return 0 if project_root and logo.exists() and app_icon.exists() and pystray_ok else 1
 
 
