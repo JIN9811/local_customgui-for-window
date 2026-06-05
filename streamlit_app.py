@@ -614,7 +614,13 @@ def render_css() -> None:
         .app-hero-logo-row { display: flex; align-items: center; margin-bottom: .9rem; min-height: 42px; }
         .app-hero-logo { max-height: 42px; width: auto; object-fit: contain; display: block; }
         .app-title-row { display: flex; align-items: center; gap: .85rem; flex-wrap: wrap; }
-        .app-title-row h1 { margin: 0; color: #fff; font-size: clamp(1.75rem, 2.75vw, 2.7rem); line-height: 1.08; letter-spacing: 0; font-weight: 820; word-break: keep-all; overflow-wrap: normal; text-wrap: balance; }
+        .app-title-row h1 { margin: 0; color: #fff !important; -webkit-text-fill-color: #fff; font-size: clamp(1.75rem, 2.75vw, 2.7rem); line-height: 1.08; letter-spacing: 0; font-weight: 820; word-break: keep-all; overflow-wrap: normal; text-wrap: balance; }
+        .app-hero .app-title-row h1,
+        .app-hero .app-title-row h1 *,
+        .app-hero [data-testid="stMarkdownContainer"] h1 {
+          color: #fff !important;
+          -webkit-text-fill-color: #fff;
+        }
         .app-byline { display: inline-flex; align-items: center; gap: .5rem; transform: translateY(.12rem); }
         .app-byline span { color: rgba(255,255,255,.72); font-size: clamp(1rem, 1.85vw, 1.55rem); line-height: 1; font-weight: 650; letter-spacing: 0; }
         .app-aim-logo { height: clamp(1.25rem, 2.05vw, 1.8rem); width: auto; object-fit: contain; display: block; background: rgba(255,255,255,.92); border-radius: 9px; padding: .16rem .32rem; }
