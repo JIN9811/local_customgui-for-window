@@ -153,6 +153,35 @@ $env:STREAMLIT_SERVER_SHOW_EMAIL_PROMPT = "false"
 http://127.0.0.1:8791
 ```
 
+## Windows 수동 중지
+
+Manager EXE를 사용하는 경우 `Run` 탭의 `Stop App` 또는 트레이 메뉴의 `Quit Server`를 누르면 됩니다. 이 동작은 Streamlit 프로세스 트리, 같은 프로젝트의 백그라운드 Streamlit 프로세스, Ollama에 로딩된 AIM4LAB 모델을 함께 정리합니다.
+
+PowerShell에서 수동 실행한 서버를 직접 정리해야 할 때는 아래 명령을 사용합니다.
+
+```powershell
+$ProjectRoot = (Get-Location).Path.ToLowerInvariant()
+$EnvName = "local_customgui_windows"
+
+Get-CimInstance Win32_Process | Where-Object {
+  $name = ([string]$_.Name).ToLowerInvariant()
+  $runtimeProcess = @("python.exe", "pythonw.exe", "conda.exe", "streamlit.exe") -contains $name
+  $text = (([string]$_.CommandLine) + " " + ([string]$_.ExecutablePath)).ToLowerInvariant()
+  $appMatch = $text.Contains("streamlit_app.py") -and $text.Contains($ProjectRoot)
+  $envMatch = $text.Contains($EnvName) -and $text.Contains("streamlit")
+  $runtimeProcess -and ($appMatch -or $envMatch)
+} | ForEach-Object {
+  Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+$OllamaExe = "$env:LocalAppData\Programs\Ollama\ollama.exe"
+if (Test-Path $OllamaExe) {
+  & $OllamaExe stop gemma4:e2b 2>$null
+  & $OllamaExe stop gemma4:e4b 2>$null
+  & $OllamaExe ps
+}
+```
+
 ## Manager EXE 빌드
 
 설치, 실행, 삭제를 한 창에서 처리하는 Manager EXE를 빌드합니다.
@@ -167,7 +196,7 @@ powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_manag
 LocalCustomGUI-Manager.exe
 ```
 
-Manager EXE는 AIM4LAB 로고와 아이콘을 포함하며 `Install`, `Run`, `Uninstall` 탭을 제공합니다.
+Manager EXE는 AIM4LAB 로고와 아이콘을 포함하며 `Install`, `Run`, `Uninstall` 탭을 제공합니다. `Stop App`은 Streamlit만 닫는 버튼이 아니라, 앱 런타임 전체를 정리하는 버튼입니다.
 
 콘솔 설치 런처를 직접 사용할 때는 모델 옵션을 반복하거나 `both`를 지정할 수 있습니다.
 

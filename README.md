@@ -84,6 +84,8 @@
 
 서버가 실행 중일 때 Manager 창의 닫기 버튼을 누르면 서버는 종료되지 않고 Windows 시스템 트레이로 숨겨집니다. 트레이 아이콘을 우클릭하면 `Open GUI`, `Restart Server`, `Quit Server`, `Open Browser`를 사용할 수 있습니다.
 
+`Stop App`은 Manager가 실행한 Streamlit 프로세스 트리를 종료하고, 같은 프로젝트에서 남아 있는 백그라운드 Streamlit 프로세스도 정리합니다. 이어서 Ollama에 로딩된 AIM4LAB 모델(`gemma4:e2b`, `gemma4:e4b`)을 언로드하고 `ollama ps` 목록에서 사라질 때까지 확인합니다. Ollama Desktop/서버 프로그램 자체는 유지되며, 모델 메모리 로딩만 내려갑니다.
+
 ## 3. 서버 기능
 
 브라우저 왼쪽 `Runtime` 영역에서 로컬 LLM 서버를 관리합니다.
@@ -239,6 +241,8 @@ Manager의 `Uninstall` 탭에서 삭제할 항목을 선택합니다.
 4. `Uninstall Selected`를 누릅니다.
 5. 확인 창에서 삭제 대상 목록을 다시 확인한 뒤 진행합니다.
 
+삭제를 시작하면 먼저 `Stop App`과 같은 런타임 정리가 실행됩니다. 실행 중인 Streamlit 서버, 남아 있는 앱용 Streamlit 프로세스, Ollama에 로딩된 AIM4LAB 모델을 정리한 뒤 선택한 삭제 항목을 처리합니다.
+
 기본 추천 삭제 항목:
 
 - conda 환경 `local_customgui_windows`
@@ -266,6 +270,8 @@ Ollama 모델 다운로드는 처음 한 번 오래 걸릴 수 있습니다. 모
 Streamlit이 이메일 입력을 묻는 경우 Manager 설치를 다시 실행하면 사용자 Streamlit 설정이 준비됩니다. 수동 실행 시에는 [수동 설치 문서](docs/manual_installation.md)의 실행 명령을 사용하세요.
 
 Ollama Desktop의 Context length는 16k 근처로 맞추는 것을 권장합니다. 앱 내부 `Context Length` 기본값도 `16384`입니다.
+
+`Stop App`이나 트레이의 `Quit Server`를 눌렀는데 Ollama 아이콘이 계속 보여도 정상입니다. Manager는 Ollama 프로그램을 강제 종료하지 않고, 앱에서 사용하던 로딩 모델만 내려서 메모리를 비웁니다. 로딩 상태는 PowerShell에서 `ollama ps`로 확인할 수 있습니다.
 
 ## 8. 문서와 파일 구조
 
